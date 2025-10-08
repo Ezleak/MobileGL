@@ -1,7 +1,7 @@
 name: Android Build
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch:
   push:
     branches:
       - dev
@@ -30,7 +30,7 @@ jobs:
           distribution: 'temurin'
           java-version: '11'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK and NDK
         uses: android-actions/setup-android@v3
         with:
           packages: |
@@ -40,34 +40,29 @@ jobs:
             cmake;3.22.1
             ndk;25.1.8937393
 
-      - name: Get CMake
-        uses: lukka/get-cmake@latest
-
       - name: Update glslang external sources
         working-directory: ${{env.PROJECT_ROOT}}/3rdparty/glslang
         run: python update_glslang_sources.py
 
       - name: Configure CMake for Android
         working-directory: ${{env.PROJECT_ROOT}}
-        env:
-          ANDROID_NDK_HOME: ${{env.ANDROID_SDK_ROOT}}/ndk/25.1.8937393
         run: |
           if [ "${{ secrets.ACTIONS_STEP_DEBUG }}" == "true" ]; then
             cmake -S . -B build-android \
-              -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
               -DANDROID_PLATFORM=android-30 \
               -DANDROID_ABI=arm64-v8a \
-              -DANDROID_NDK=${ANDROID_NDK_HOME} \
+              -DANDROID_NDK=$ANDROID_NDK_HOME \
               -DCMAKE_BUILD_TYPE=Debug \
               -DBUILD_TEST=OFF \
               -DBUILD_BENCHMARK=OFF \
               -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           else
             cmake -S . -B build-android \
-              -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake \
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
               -DANDROID_PLATFORM=android-30 \
               -DANDROID_ABI=arm64-v8a \
-              -DANDROID_NDK=${ANDROID_NDK_HOME} \
+              -DANDROID_NDK=$ANDROID_NDK_HOME \
               -DCMAKE_BUILD_TYPE=Release \
               -DBUILD_TEST=OFF \
               -DBUILD_BENCHMARK=OFF \
