@@ -1,0 +1,78 @@
+name: Android Build & Upload
+
+on:
+  push:
+    branches:
+      - dev
+      - Feat/Backend-Direct-GLES
+  workflow_dispatch:
+jobs:
+  android-build:
+    runs-on: ubuntu-latest
+    env:
+      TEST_ROOT: ${{github.workspace}}
+      ANDROID_NDK_HOME: ${{github.workspace}}/android-ndk-r25c
+      ANDROID_HOME: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 32
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-30, build-tools;30.0.3, ndk;25.1.8937393
+
+      - name: Download Android NDK
+        run: |
+          wget https://github.com/android/ndk/releases/download/ndk-r25c/android-ndk-r25c-linux.zip
+          unzip android-ndk-r25c-linux.zip
+          echo "ANDROID_NDK_HOME=${{github.workspace}}/android-ndk-r25c" >> $GITHUB_ENV
+
+      - name: Get CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Update glslang external sources
+        working-directory: ${{env.TEST_ROOT}}/3rdparty/glslang
+        run: python update_glslang_sources.py
+
+      - name: Configure CMake for Android
+        working-directory: ${{env.TEST_ROOT}}
+        run: |
+          cmake -S . -B build-android \
+            -DCMAKE_TOOLCHAIN_FILE=${{env.ANDROID_NDK_HOME}}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-21 \
+            -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TEST=ON \
+            -DBUILD_BENCHMARK=OFF \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: Build for Android
+        working-directory: ${{env.TEST_ROOT}}/build-android
+        run: cmake --build . --parallel 4
+
+      - name: Upload Android Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-${{ github.sha }}
+          path: |
+            ${{env.TEST_ROOT}}/build-android/**
+            !${{env.TEST_ROOT}}/build-android/CMakeFiles/**
+            !${{env.TEST_ROOT}}/build-android/**/*.log
+          if-no-files-found: warn
+
+      - name: Upload Test Executables
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: android-tests-${{ github.sha }}
+          path: ${{env.TEST_ROOT}}/build-android/MobileGL/MG_Test/**
