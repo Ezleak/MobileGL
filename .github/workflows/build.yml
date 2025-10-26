@@ -8,7 +8,7 @@ on:
       - Feat/Backend-Direct-GLES
 
 env:
-  ANDROID_NDK_VERSION: "25.1.8937393"
+  ANDROID_NDK_VERSION: "27.3.13750724"
   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
 jobs:
@@ -58,9 +58,9 @@ jobs:
           yes | sdkmanager --sdk_root=${{ env.ANDROID_SDK_ROOT }} \
             "ndk;${{ env.ANDROID_NDK_VERSION }}" \
             "platforms;android-30" \
-            "platforms;android-33" \
-            "build-tools;33.0.0" \
-            "cmake;3.22.1" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "cmake;4.1.2" \
             > /dev/null
 
       - name: Set NDK root
