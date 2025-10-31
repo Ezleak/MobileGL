@@ -455,10 +455,17 @@ namespace MobileGL {
 
         template <GLsizei VecCount, typename T>
         void Uniform_State(MG_State::GLState::ProgramObject& programObject, GLuint location, T* value) {
-            auto size = programObject.GetUniformSizesInBytes(location);
-            auto offset = programObject.GetUniformOffset(location);
-            assert(size >= VecCount * sizeof(T));
-            memcpy((char*)programObject.MapUBO() + offset, value, VecCount * sizeof(T));
+            if (!programObject.IsUniformOpaqueAtLocation(location)) {
+                auto size = programObject.GetUniformSizesInBytes(location);
+                auto offset = programObject.GetUniformOffset(location);
+                assert(size >= VecCount * sizeof(T));
+                memcpy((char*)programObject.MapUBO() + offset, value, VecCount * sizeof(T));
+            } else {
+                auto* ttype = programObject.GetUniformTType(location);
+                if (ttype->isTexture() || ttype->isImage()) {
+                    programObject.SetUniformSamplerOrImageUnitIndex(location, *value);
+                }
+            }
         }
 
         template <GLsizei VecCount, typename T>
@@ -473,7 +480,7 @@ namespace MobileGL {
                 return;
             }
 
-            if (location >= programObject->GetUniformCount() || location < -1) {
+            if (location > programObject->GetMaxUniformLocation() || location < -1) {
                 MG_State::pGLContext->RecordError(
                     ErrorCode::InvalidOperation,
                     MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__,
