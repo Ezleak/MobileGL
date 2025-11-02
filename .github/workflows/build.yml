@@ -1,0 +1,107 @@
+name: Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+      - Feat/Backend-Direct-GLES
+
+env:
+  ANDROID_NDK_VERSION: "27.3.13750724"
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+jobs:
+  android-build:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ROOT: ${{github.workspace}}
+
+    steps:
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 32
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android Environment
+        run: |
+          echo "ANDROID_SDK_ROOT=${{ env.ANDROID_SDK_ROOT }}" >> $GITHUB_ENV
+          echo "${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          sudo mkdir -p ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools
+          sudo chmod -R 777 ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools
+
+      - name: Install Android Command-line Tools
+        run: |
+          if [ ! -d "${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest" ]; then
+            echo "Installing Android Command-line Tools..."
+            wget -q "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip" -O commandlinetools.zip
+            unzip -q commandlinetools.zip -d ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools
+            mv ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/cmdline-tools ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest
+          else
+            echo "Android Command-line Tools already exist, skipping download."
+          fi
+
+      - name: Install Android NDK and other components
+        run: |
+          yes | sdkmanager --sdk_root=${{ env.ANDROID_SDK_ROOT }} --licenses > /dev/null 2>&1 || true
+          yes | sdkmanager --sdk_root=${{ env.ANDROID_SDK_ROOT }} \
+            "ndk;${{ env.ANDROID_NDK_VERSION }}" \
+            "platforms;android-30" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "cmake;4.1.2" \
+            > /dev/null
+
+      - name: Set NDK root
+        run: echo "ANDROID_NDK_ROOT=${{ env.ANDROID_SDK_ROOT }}/ndk/${{ env.ANDROID_NDK_VERSION }}" >> $GITHUB_ENV
+
+      - name: Update glslang external sources
+        working-directory: ${{env.PROJECT_ROOT}}/3rdparty/glslang
+        run: python update_glslang_sources.py
+
+      - name: Configure CMake for Android
+        working-directory: ${{env.PROJECT_ROOT}}
+        run: |
+          if [ "${{ secrets.ACTIONS_STEP_DEBUG }}" == "true" ]; then
+            cmake -S . -B build-android \
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+              -DANDROID_PLATFORM=android-30 \
+              -DANDROID_ABI=arm64-v8a \
+              -DANDROID_NDK=$ANDROID_NDK_HOME \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TEST=OFF \
+              -DBUILD_BENCHMARK=OFF \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          else
+            cmake -S . -B build-android \
+              -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+              -DANDROID_PLATFORM=android-30 \
+              -DANDROID_ABI=arm64-v8a \
+              -DANDROID_NDK=$ANDROID_NDK_HOME \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TEST=OFF \
+              -DBUILD_BENCHMARK=OFF \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          fi
+
+      - name: Build for Android
+        working-directory: ${{env.PROJECT_ROOT}}/build-android
+        run: cmake --build . --parallel 4
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-output
+          path: ${{env.PROJECT_ROOT}}/build-android/libMobileGL.so
+          if-no-files-found: warn
