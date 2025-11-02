@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - dev
+      - patch-2
       - Feat/Backend-Direct-GLES
 
 env:
