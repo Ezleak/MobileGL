@@ -86,7 +86,8 @@ namespace MobileGL {
 
                 MG_Util::ShaderTranspiler::ProgramAttrib attrib{
                     .shaders = Move(shaders),
-                    .explicitAttribLocations = m_explicitAttribLocations
+                    .explicitVertexInLocations = m_explicitAttribLocations,
+                    .explicitFragmentOutLocations = m_explicitFragDataLocation
                 };
 
                 MGLOG_D("ProgramObject %u: Calling ShaderCompiler::LinkProgram", m_externalIndex);
@@ -290,7 +291,7 @@ namespace MobileGL {
                 //     if (location < 0) continue;
                 //     if (location >= (int)m_attribs.size()) {
                 //         if (location >= maxAttribs) {
-                //             MGLOG_W("ProgramObject %u: SetExplicitAttribLocation: requested location %d >= "
+                //             MGLOG_W("ProgramObject %u: SetExplicitVertexInLocation: requested location %d >= "
                 //                     "GL_MAX_VERTEX_ATTRIBS (%d). Ignored for attribute '%s'.",
                 //                     m_externalIndex, location, maxAttribs, name.c_str());
                 //             continue;
@@ -376,7 +377,8 @@ namespace MobileGL {
 
                 ProgramAttrib attrib{
                     .shaders = Move(shaders),
-                    .explicitAttribLocations = m_explicitAttribLocations
+                    .explicitVertexInLocations = m_explicitAttribLocations,
+                    .explicitFragmentOutLocations = m_explicitFragDataLocation
                 };
                 MGLOG_D("ProgramObject %u: GenerateBinary - linking program for binary", m_externalIndex);
                 auto programResult = ShaderCompiler::LinkProgram(attrib);
@@ -465,12 +467,28 @@ namespace MobileGL {
                 // will probably be useful when multi-threaded compilation
             }
 
-            void ProgramObject::SetExplicitAttribLocation(Uint index, const char* name) {
-                MGLOG_D("ProgramObject %u: SetExplicitAttribLocation called name='%s' index=%u", m_externalIndex, name,
+            void ProgramObject::SetExplicitVertexInLocation(Uint index, const char* name) {
+                MGLOG_D("ProgramObject %u: SetExplicitVertexInLocation called name='%s' index=%u", m_externalIndex, name,
                         index);
                 m_explicitAttribLocations[name] = index;
-                MGLOG_D("ProgramObject %u: SetExplicitAttribLocation - stored explicit location for '%s' -> %u",
+                MGLOG_D("ProgramObject %u: SetExplicitVertexInLocation - stored explicit location for '%s' -> %u",
                         m_externalIndex, name, index);
+            }
+
+            void ProgramObject::SetExplicitFragmentOutLocation(Uint index, const char* name) {
+                MGLOG_D("ProgramObject %u: SetExplicitFragmentOutLocation called name='%s' index=%u", m_externalIndex, name,
+                        index);
+                m_explicitFragDataLocation[name] = index;
+                MGLOG_D("ProgramObject %u: SetExplicitFragmentOutLocation - stored explicit location for '%s' -> %u",
+                        m_externalIndex, name, index);
+            }
+
+            Int ProgramObject::GetFragmentDataLocation(const char* name) {
+                // TODO: should retrieve "post-mortem" location from glslang instead
+                auto it = m_explicitFragDataLocation.find(name);
+                if (it == m_explicitFragDataLocation.end())
+                    return -1;
+                return it->second;
             }
         } // namespace GLState
     } // namespace MG_State

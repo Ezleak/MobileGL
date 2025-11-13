@@ -9,8 +9,15 @@ namespace MobileGL {
         const glslang::TType& type = ent.symbol->getType();
         const glslang::TString& name = ent.symbol->getAccessName();
         if (currentStage == EShLangVertex && type.getQualifier().isPipeInput()) {
-            auto it = m_explicitAttribLocations.find(name.c_str());
-            if (it != m_explicitAttribLocations.end()) {
+            auto it = m_explicitVertexIns.find(name.c_str());
+            if (it != m_explicitVertexIns.end()) {
+                auto& writableType = ent.symbol->getWritableType();
+                writableType.getQualifier().layoutLocation = it->second;
+            }
+        }
+        if (currentStage == EShLangFragment && type.getQualifier().isPipeOutput()) {
+            auto it = m_explicitFragOuts.find(name.c_str());
+            if (it != m_explicitFragOuts.end()) {
                 auto& writableType = ent.symbol->getWritableType();
                 writableType.getQualifier().layoutLocation = it->second;
             }
