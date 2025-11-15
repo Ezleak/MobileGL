@@ -6,10 +6,11 @@
 #include <MG_State/GLState/Core.h>
 #include <MG_Util/Metrics/TextureMetrics.h>
 #include <MG_State/GLState/ErrorState/Error.h>
+#include <MG_Util/Texture/PixelStoreProcessor.h>
+#include <MG_Util/Converters/MGToMG/TextureEnumConverter.h>
 #include <MG_Util/Converters/GLToMG/TextureEnumConverter.h>
 #include <MG_Util/Converters/MGToGL/TextureEnumConverter.h>
 #include <MG_Util/Converters/MGToStr/TextureEnumConverter.h>
-#include <MG_Util/Converters/MGToMG/TextureEnumConverter.h>
 
 namespace MobileGL {
     namespace MG_Impl::GLImpl {
@@ -39,6 +40,7 @@ namespace MobileGL {
                                                             texturePixelDataType))
                 return;
             if (!TextureImpl::ValidateTextureLevelWithUploadTarget(textureUploadingTarget, level)) return;
+            if (!pixels) return;
 
             // TODO: GL_INVALID_OPERATION is generated if a non-zero buffer object name is bound to the
             // GL_PIXEL_UNPACK_BUFFER target and the buffer object's data store is currently mapped.
@@ -58,31 +60,49 @@ namespace MobileGL {
             if (!TextureImpl::ValidateTextureSubImageOffsets(textureObject, xoffset, width, yoffset, height)) return;
 
             // ======================= Processing ================================
-            SizeT imageSize =
-                MG_Util::CalculateTextureImageSize(textureInternalFormat, texturePixelDataType, {width, height, 1});
             auto& mipmap = textureObject->GetMipmap(level);
             Vector<Uint8>& data = mipmap.data;
 
-            SizeT bytesPerPixel = MG_Util::GetTexturePixelSize(textureInternalFormat) *
-                                  MG_Util::GetTexturePixelDataTypeSize(texturePixelDataType);
-            SizeT rowStride = mipmap.size.x() * bytesPerPixel;
+            SizeT imageSize = 0;
+            const SizeT bytesPerPixel = MG_Util::GetInputBytesPerPixel(textureInternalFormat, texturePixelDataType);
 
-            const Uint8* srcData = reinterpret_cast<const Uint8*>(pixels);
-            if (!srcData) {
+            void* processedPixels = MG_Util::PixelStoreProcessor::ProcessTexturePixelsDataUnpack(
+                pixels, MG_State::pGLContext->GetPixelStoreParameters(true), bytesPerPixel, {width, height, 1},
+                false /*TODO*/, imageSize);
+
+            if (!processedPixels || imageSize == 0) {
+                MGLOG_E("TexSubImage2D_State: Failed to process pixel data for TexSubImage2D, width: %d, height: %d",
+                        width, height);
+                if (processedPixels) free(processedPixels);
                 return;
             }
 
-            for (GLint row = 0; row < height; ++row) {
-                SizeT dstOffset = ((yoffset + row) * mipmap.size.x() + xoffset) * bytesPerPixel;
-                SizeT srcOffset = row * width * bytesPerPixel;
+            const SizeT srcRowSize = width * bytesPerPixel;
+            const SizeT destRowSize = mipmap.size.x() * bytesPerPixel;
 
-                if (dstOffset + width * bytesPerPixel <= data.size()) {
-                    Copy(reinterpret_cast<const Uint8*>(srcData + srcOffset),
-                         reinterpret_cast<Uint8*>(&data[dstOffset]), width * bytesPerPixel);
-                } else {
-                    return;
-                }
+            if (xoffset + width > static_cast<GLsizei>(mipmap.size.x()) ||
+                yoffset + height > static_cast<GLsizei>(mipmap.size.y())) {
+                MGLOG_E("TexSubImage2D_State: Specified region exceeds texture dimensions, xoffset: %d, yoffset: %d, "
+                        "width: %d, height: %d, mipmap size: (%d, %d)",
+                        xoffset, yoffset, width, height, mipmap.size.x(), mipmap.size.y());
+                free(processedPixels);
+                return;
             }
+
+            const auto* srcData = static_cast<const Uint8*>(processedPixels);
+            Uint8* destData = data.data();
+            if (!data.size()) {
+                SizeT totalSize = mipmap.size.x() * mipmap.size.y() * bytesPerPixel;
+                data.resize(totalSize);
+            }
+
+            for (GLsizei y = 0; y < height; y++) {
+                const SizeT destRowOffset = (yoffset + y) * destRowSize + xoffset * bytesPerPixel;
+                const SizeT srcRowOffset = y * srcRowSize;
+                Memcpy(destData + destRowOffset, srcData + srcRowOffset, srcRowSize);
+            }
+
+            free(processedPixels);
 
             mipmap.dirty = true;
         }
@@ -92,6 +112,7 @@ namespace MobileGL {
             // TODO: implement
         }
 
+        // TexParameteriv/TexParameterfv are introduced in OpenGL 4.0, so do not support them for now.
         void TexParameterf_State(GLenum target, GLenum pname, GLfloat param) {
 
             // ======================= Converting ================================
@@ -130,14 +151,26 @@ namespace MobileGL {
                 break;
             }
             case GL_TEXTURE_BASE_LEVEL:
+                textureObject->SetBaseLevel(param);
+                break;
             case GL_TEXTURE_MAX_LEVEL:
+                textureObject->SetMaxLevel(param);
+                break;
             case GL_TEXTURE_SWIZZLE_R:
             case GL_TEXTURE_SWIZZLE_G:
             case GL_TEXTURE_SWIZZLE_B:
-            case GL_TEXTURE_SWIZZLE_A:
+            case GL_TEXTURE_SWIZZLE_A: {
+                auto swizzleParam = MG_Util::ConvertGLEnumToTextureSwizzleParam(pname);
+                auto swizzleValue = MG_Util::ConvertGLEnumToTextureSwizzleParam(param);
+                textureObject->SetSwizzleParam(swizzleParam, swizzleValue);
+                break;
+            }
             case GL_TEXTURE_SWIZZLE_RGBA:
+                // Not supported in this function
+                break;
             case GL_TEXTURE_BORDER_COLOR:
-                break; // TODO
+                // Not supported in this function
+                break;
             case GL_TEXTURE_WRAP_S:
                 textureObject->GetSamplerObject()->SetWrapS(MG_Util::ConvertGLEnumToSamplerWrapMode(param));
                 break;
@@ -199,14 +232,26 @@ namespace MobileGL {
                 break;
             }
             case GL_TEXTURE_BASE_LEVEL:
+                textureObject->SetBaseLevel(param);
+                break;
             case GL_TEXTURE_MAX_LEVEL:
+                textureObject->SetMaxLevel(param);
+                break;
             case GL_TEXTURE_SWIZZLE_R:
             case GL_TEXTURE_SWIZZLE_G:
             case GL_TEXTURE_SWIZZLE_B:
-            case GL_TEXTURE_SWIZZLE_A:
+            case GL_TEXTURE_SWIZZLE_A: {
+                auto swizzleParam = MG_Util::ConvertGLEnumToTextureSwizzleParam(pname);
+                auto swizzleValue = MG_Util::ConvertGLEnumToTextureSwizzleParam(param);
+                textureObject->SetSwizzleParam(swizzleParam, swizzleValue);
+                break;
+            }
             case GL_TEXTURE_SWIZZLE_RGBA:
+                // Not supported in this function
+                break;
             case GL_TEXTURE_BORDER_COLOR:
-                break; // TODO
+                // Not supported in this function
+                break;
             case GL_TEXTURE_WRAP_S:
                 textureObject->GetSamplerObject()->SetWrapS(MG_Util::ConvertGLEnumToSamplerWrapMode(param));
                 break;
@@ -248,6 +293,20 @@ namespace MobileGL {
 
         void TexImage2D_State(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
                               GLint border, GLenum format, GLenum type, const void* pixels) {
+            MGLOG_D(
+                "TexImage2D_State called with target: %s, level: %d, internalformat: %s, width: %d, height: %d, "
+                "border: %d, format: %s, type: %s, pixels: %p",
+                MG_Util::ConvertTextureUploadTargetToString(MG_Util::ConvertGLEnumToTextureUploadTarget(target))
+                    .c_str(),
+                level,
+                MG_Util::ConvertTextureInternalFormatToString(
+                    MG_Util::ConvertGLEnumToTextureInternalFormat(internalformat))
+                    .c_str(),
+                width, height, border,
+                MG_Util::ConvertTextureInputFormatToString(MG_Util::ConvertGLEnumToTextureInputFormat(format)).c_str(),
+                MG_Util::ConvertTexturePixelDataTypeToString(MG_Util::ConvertGLEnumToTexturePixelDataType(type))
+                    .c_str(),
+                pixels);
             // ======================= Converting ================================
             TextureUploadTarget textureUploadingTarget = MG_Util::ConvertGLEnumToTextureUploadTarget(target);
             TextureTarget textureTarget = MG_Util::ConvertTextureUploadTargetToTextureTarget(textureUploadingTarget);
@@ -280,7 +339,8 @@ namespace MobileGL {
 
             // ======================= Processing ================================
             SharedPtr<MG_State::GLState::ITextureObject> textureObject = nullptr;
-            if (TextureImpl::IsProxyTextureTarget(textureUploadingTarget)) {
+            Bool isProxy = TextureImpl::IsProxyTextureTarget(textureUploadingTarget);
+            if (isProxy) {
                 textureObject =
                     TextureImpl::pProxyTextureManager->CreateOrReplaceProxyTextureObject(textureUploadingTarget);
             } else {
@@ -294,13 +354,50 @@ namespace MobileGL {
             if (!TextureImpl::ValidateTextureObject(textureObject)) return;
 
             // ======================= Processing ================================
-            SizeT imageSize =
-                MG_Util::CalculateTextureImageSize(textureInternalFormat, texturePixelDataType, {width, height, 1});
 
+            SizeT imageSize = 0;
+            void* processedPixels = nullptr;
+            const SizeT bytesPerPixel = MG_Util::GetInputBytesPerPixel(textureInternalFormat, texturePixelDataType);
+            const SizeT totalBytes = width * height * bytesPerPixel;
+
+            if (pixels) {
+                processedPixels = MG_Util::PixelStoreProcessor::ProcessTexturePixelsDataUnpack(
+                    pixels, MG_State::pGLContext->GetPixelStoreParameters(true), bytesPerPixel, {width, height, 1},
+                    false, imageSize);
+            }
+
+            MG_State::GLState::MipmapLevelInput mipmap =
+                MG_State::GLState::MipmapLevelInput({width, height, 1}, level, false, 0,
+                                                    {isProxy ? nullptr : malloc(totalBytes), isProxy ? 0 : totalBytes});
+
+            if (!isProxy && !mipmap.inputData.data) {
+                MGLOG_E("TexImage2D_State: Failed to allocate memory for mipmap level data, size: %zu", totalBytes);
+                if (processedPixels) free(processedPixels);
+                processedPixels = nullptr;
+            }
+
+            if (processedPixels && imageSize > 0 && !isProxy) {
+                if (imageSize != totalBytes) {
+                    MGLOG_W("TexImage2D_State: Processed pixel data size (%zu) does not match expected size (%zu). "
+                            "This may indicate an alignment or processing issue.",
+                            imageSize, totalBytes);
+                }
+
+                const SizeT copySize = std::min(imageSize, totalBytes);
+                Memcpy(mipmap.inputData.data, processedPixels, copySize);
+                free(processedPixels);
+            } else if (pixels && !isProxy) {
+                MGLOG_E("TexImage2D_State: Failed to process pixel data, initializing with original data.");
+                Memcpy(mipmap.inputData.data, pixels, totalBytes);
+            } else {
+                if (mipmap.inputData.data) {
+                    free(mipmap.inputData.data);
+                    mipmap.inputData.data = nullptr;
+                }
+            }
             textureObject->SetInternalFormat(textureInternalFormat);
-            MG_State::GLState::MipmapLevelInput mipmap = MG_State::GLState::MipmapLevelInput(
-                {width, height, 1}, level, false, 0, {const_cast<void*>(pixels), imageSize});
             textureObject->SetMipmapLevel(mipmap);
+            if (mipmap.inputData.data) free(mipmap.inputData.data);
         }
 
         void TexImage1D_State(GLenum target, GLint level, GLint internalFormat, GLsizei width, GLint border,
@@ -314,7 +411,7 @@ namespace MobileGL {
 
         GLboolean IsTexture_State(GLuint texture) {
             // ======================= Processing ================================
-            if (!TextureImpl::ValidateTextureName(texture)) return GL_FALSE;
+            if (!TextureImpl::ValidateTextureName(texture, true)) return GL_FALSE;
             return MG_State::pGLContext->ValidateTextureObject(texture) ? GL_TRUE : GL_FALSE;
         }
 
@@ -765,7 +862,9 @@ namespace MobileGL {
                     ErrorCode::InvalidEnum,
                     MakeShared<GenericErrorInfo>(
                         "MG_Impl/GLImpl", "ActiveTexture_State",
-                        "Texture must be one of GL_TEXTUREi, where i is in the range 0 to 31."));
+                        std::format("Texture must be one of GL_TEXTUREi, where i is in the range 0 to 31, but got "
+                                    "invalid enum: 0x{:X}, which may stand for unit {}.",
+                                    texture, texture - GL_TEXTURE0)));
                 return;
             }
 

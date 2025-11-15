@@ -1,5 +1,6 @@
 #include "GL_Buffer.h"
 #include "Validators.h"
+#include "MG_Util/Converters/GLToStr/GLEnumConverter.h"
 #include <MG_State/GLState/Core.h>
 #include <MG_State/GLState/ErrorState/Error.h>
 #include <MG_Util/Converters/GLToMG/BufferEnumConverter.h>
@@ -433,6 +434,8 @@ namespace MobileGL {
         }
 
         void BufferData_State(GLenum target, GLsizeiptr size, const void* data, GLenum usage) {
+            MGLOG_D("%s: %s, size = %d, data = %p, usage = %s",
+                    __func__, MG_Util::ConvertGLEnumToString(target).c_str(), size, data, MG_Util::ConvertGLEnumToString(usage).c_str());
             if (size < 0) {
                 MG_State::pGLContext->RecordError(
                     ErrorCode::InvalidValue,
@@ -476,6 +479,7 @@ namespace MobileGL {
 
             auto& bindingSlot = MG_State::pGLContext->GetBufferBindingSlot(bufferTarget);
             bindingSlot.Bind(bufferObject);
+            MGLOG_D("%s: bind buffer object %p -> %s", __func__, bufferObject.get(), MG_Util::ConvertGLEnumToString(target).c_str());
         }
 
         void GenBuffers_State(GLsizei n, GLuint* buffers) {
@@ -492,6 +496,36 @@ namespace MobileGL {
         GLboolean IsBuffer_State(GLuint buffer) {
             if (!BufferImpl::ValidateBufferName(buffer)) return GL_FALSE;
             return MG_State::pGLContext->ValidateBufferObject(buffer) ? GL_TRUE : GL_FALSE;
+        }
+
+        void BindBufferBase_State(GLenum target, GLuint pointIndex, GLuint buffer) {
+            BufferTarget bufferTarget = MG_Util::ConvertGLEnumToBufferTarget(target);
+            if (!BufferImpl::ValidateBufferBindingPointTarget(bufferTarget)) return;
+
+            auto bufferObject = MG_State::pGLContext->GetBufferObject(buffer);
+            if (!bufferObject) {
+                MG_State::pGLContext->CreateBufferObject(buffer);
+                bufferObject = MG_State::pGLContext->GetBufferObject(buffer);
+            }
+
+            auto& point = MG_State::pGLContext->GetBufferBindingPoint(bufferTarget, pointIndex);
+            point.Bind(bufferObject);
+            point.ClearRange();
+        }
+
+        void BindBufferRange_State(GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size) {
+            BufferTarget bufferTarget = MG_Util::ConvertGLEnumToBufferTarget(target);
+            if (!BufferImpl::ValidateBufferBindingPointTarget(bufferTarget)) return;
+
+            auto bufferObject = MG_State::pGLContext->GetBufferObject(buffer);
+            if (!bufferObject) {
+                MG_State::pGLContext->CreateBufferObject(buffer);
+                bufferObject = MG_State::pGLContext->GetBufferObject(buffer);
+            }
+
+            auto& point = MG_State::pGLContext->GetBufferBindingPoint(bufferTarget, index);
+            point.Bind(bufferObject);
+            point.SetRange(Range1D(offset, offset + size));
         }
 
         /* @INSERTION_POINT:FUNCTION_IMPLEMENTATION@ */
@@ -542,6 +576,14 @@ namespace MobileGL {
 
         void GenBuffers(GLsizei n, GLuint* buffers) {
             GenBuffers_State(n, buffers);
+        }
+
+        void BindBufferBase(GLenum target, GLuint index, GLuint buffer) {
+            BindBufferBase_State(target, index, buffer);
+        }
+
+        void BindBufferRange(GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size) {
+            BindBufferRange_State(target, index, buffer, offset, size);
         }
     } // namespace MG_Impl::GLImpl
 } // namespace MobileGL

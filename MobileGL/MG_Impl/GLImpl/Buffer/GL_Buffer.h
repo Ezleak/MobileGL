@@ -17,5 +17,8 @@ namespace MobileGL {
         void BufferData(GLenum target, GLsizeiptr size, const void* data, GLenum usage);
         void BindBuffer(GLenum target, GLuint buffer);
         void GenBuffers(GLsizei n, GLuint* buffers);
+        void BindBufferBase(GLenum target, GLuint index, GLuint buffer);
+        void BindBufferRange(GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size);
+
     } // namespace MG_Impl::GLImpl
 } // namespace MobileGL

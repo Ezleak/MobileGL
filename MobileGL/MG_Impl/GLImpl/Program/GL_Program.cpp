@@ -1,7 +1,9 @@
 #include "GL_Program.h"
-
-#include "MG_State/GLState/Core.h"
-#include "MG_Util/Converters/SPIRVCrossToGL/SpvcTypeConverter.h"
+#include "MG_Util/Converters/GLToStr/GLEnumConverter.h"
+#include <MG_State/GLState/Core.h>
+#include <MG_Util/Converters/GLToMG/ProgramEnumConverter.h>
+#include <MG_Util/Converters/MGToGL/ProgramEnumConverter.h>
+#include <MG_Util/Converters/SPIRVCrossToGL/SpvcTypeConverter.h>
 
 namespace MobileGL {
     namespace MG_Impl::GLImpl {
@@ -97,7 +99,8 @@ namespace MobileGL {
             auto programObject = TryToGetProgramObject(program);
             if (!programObject) return;
 
-            programObject->SetExplicitAttribLocation(index, name);
+            MGLOG_D("%s: loc %02d = \"%s\"", __func__, index, name);
+            programObject->SetExplicitVertexInLocation(index, name);
         }
 
         void CompileShader_State(GLuint shader) {
@@ -111,8 +114,7 @@ namespace MobileGL {
         }
 
         GLuint CreateShader_State(GLenum type) {
-            auto shaderId =
-                MG_State::pGLContext->CreateShader(MG_State::GLState::ConvertMGLShaderStageByGLShaderType(type));
+            auto shaderId = MG_State::pGLContext->CreateShader(MG_Util::ConvertGLEnumToShaderStage(type));
             if (shaderId == 0) {
                 MG_State::pGLContext->RecordError(
                     ErrorCode::InvalidValue,
@@ -128,7 +130,7 @@ namespace MobileGL {
         }
 
         void DeleteShader_State(GLuint shader) {
-            if (!CheckProgramNameValidity(shader)) return;
+            if (!CheckShaderNameValidity(shader)) return;
             MG_State::pGLContext->MarkShaderForDeletion(shader);
         }
 
@@ -156,7 +158,7 @@ namespace MobileGL {
                 return;
             }
             auto programObject = TryToGetProgramObject(program);
-            if (!programObject) return;
+            if (!programObject || !programObject->GetLinkStatus()) return;
             auto attribCount = programObject->GetActiveAttributesCount();
             if (index >= attribCount) {
                 MG_State::pGLContext->RecordError(
@@ -181,7 +183,7 @@ namespace MobileGL {
                 return;
             }
             auto programObject = TryToGetProgramObject(program);
-            if (!programObject) return;
+            if (!programObject || !programObject->GetLinkStatus()) return;
             auto uniformCount = programObject->GetUniformCount();
             if (index >= uniformCount) {
                 MG_State::pGLContext->RecordError(
@@ -211,7 +213,7 @@ namespace MobileGL {
             GLsizei c = std::min((GLsizei)s.size(), maxCount);
             if (count) *count = c;
             for (GLsizei i = 0; i < c; ++i) {
-                shaders[i] = s[i]->GetId();
+                shaders[i] = s[i]->GetExternalIndex();
             }
         }
 
@@ -230,43 +232,55 @@ namespace MobileGL {
             switch (pname) {
             case GL_DELETE_STATUS:
                 *params = programObject->GetDeleteStatus();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_LINK_STATUS:
                 *params = programObject->GetLinkStatus();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_VALIDATE_STATUS:
                 *params = programObject->GetValidateStatus();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_INFO_LOG_LENGTH: {
                 const auto& log = programObject->GetInfoLog();
                 *params = log.length();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             }
             case GL_ATTACHED_SHADERS: {
                 const auto& attachedShaders = programObject->GetAttachedShaders();
                 *params = attachedShaders.size();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             }
             case GL_ACTIVE_ATOMIC_COUNTER_BUFFERS:
                 *params = programObject->GetActiveAtomicCounterCount();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_ACTIVE_ATTRIBUTES:
                 *params = programObject->GetActiveAttributesCount();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_ACTIVE_ATTRIBUTE_MAX_LENGTH:
                 *params = programObject->GetActiveAttributesMaxLength();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_ACTIVE_UNIFORMS:
                 *params = programObject->GetUniformCount();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_ACTIVE_UNIFORM_MAX_LENGTH:
                 *params = programObject->GetUniformMaxLength();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_ACTIVE_UNIFORM_BLOCKS: // GL >= 3.1
                 *params = programObject->GetActiveUniformBlocksCount();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH: // ditto.
                 *params = programObject->GetActiveUniformBlocksMaxNameLength();
+                MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), *params);
                 break;
             case GL_COMPUTE_WORK_GROUP_SIZE: // GL >= 4.3
 
@@ -279,6 +293,7 @@ namespace MobileGL {
             case GL_GEOMETRY_INPUT_TYPE:
             case GL_GEOMETRY_OUTPUT_TYPE:
             default:
+                MGLOG_D("%s: %s", __func__, MG_Util::ConvertGLEnumToString(pname).c_str());
                 MG_State::pGLContext->RecordError(
                     ErrorCode::InvalidEnum,
                     MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`pname` is not an accepted value."));
@@ -300,7 +315,7 @@ namespace MobileGL {
 
             switch (pname) {
             case GL_SHADER_TYPE:
-                *params = ConvertGLShaderTypeByMGLShaderStage(shaderObject->GetShaderStage());
+                *params = MG_Util::ConvertShaderStageToGLEnum(shaderObject->GetShaderStage());
                 break;
             case GL_DELETE_STATUS:
                 *params = shaderObject->GetDeleteStatus();
@@ -347,7 +362,9 @@ namespace MobileGL {
         GLint GetUniformLocation_State(GLuint program, const GLchar* name) {
             auto programObject = TryToGetProgramObject(program);
             if (!programObject) return -1;
-            return programObject->GetUniformLocation(name);
+            auto loc = programObject->GetUniformLocation(name);
+            MGLOG_D("%s: loc %02d = %s", __func__, loc, name);
+            return loc;
         }
 
         void GetUniform_State(GLuint program, GLint location, void* params) {
@@ -421,6 +438,7 @@ namespace MobileGL {
         void LinkProgram_State(GLuint program) {
             auto programObject = TryToGetProgramObject(program);
             if (!programObject) return;
+            MGLOG_D("%s: linking program %d", __func__, program);
             programObject->Link();
         }
 
@@ -443,6 +461,8 @@ namespace MobileGL {
         }
 
         void UseProgram_State(GLint program) {
+            MGLOG_D("UseProgram_State: program=%u", program);
+
             if (program == 0) {
                 MG_State::pGLContext->UseProgram(0);
                 return;
@@ -455,10 +475,17 @@ namespace MobileGL {
 
         template <GLsizei VecCount, typename T>
         void Uniform_State(MG_State::GLState::ProgramObject& programObject, GLuint location, T* value) {
-            auto size = programObject.GetUniformSizesInBytes(location);
-            auto offset = programObject.GetUniformOffset(location);
-            assert(size >= VecCount * sizeof(T));
-            memcpy((char*)programObject.MapUBO() + offset, value, VecCount * sizeof(T));
+            if (!programObject.IsUniformOpaqueAtLocation(location)) {
+                auto size = programObject.GetUniformSizesInBytes(location);
+                auto offset = programObject.GetUniformOffset(location);
+                assert(size >= VecCount * sizeof(T));
+                memcpy((char*)programObject.MapUBO() + offset, value, VecCount * sizeof(T));
+            } else {
+                auto* ttype = programObject.GetUniformTType(location);
+                if (ttype->isTexture() || ttype->isImage()) {
+                    programObject.SetUniformSamplerOrImageUnitIndex(location, *value);
+                }
+            }
         }
 
         template <GLsizei VecCount, typename T>
@@ -473,7 +500,7 @@ namespace MobileGL {
                 return;
             }
 
-            if (location >= programObject->GetUniformCount() || location < -1) {
+            if (location > programObject->GetMaxUniformLocation() || location < -1) {
                 MG_State::pGLContext->RecordError(
                     ErrorCode::InvalidOperation,
                     MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__,
@@ -695,8 +722,156 @@ namespace MobileGL {
             }
         }
 
+        GLuint GetUniformBlockIndex_State(GLuint program, const GLchar* uniformBlockName) {
+            auto programObject = TryToGetProgramObject(program);
+            if (!programObject) return GL_INVALID_INDEX;
+            if (!programObject->GetLinkStatus()) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`program` is not a program object that has been linked."));
+                return GL_INVALID_INDEX;
+            }
+
+
+            auto index = programObject->GetUniformBlockIndex(uniformBlockName);
+            return index;
+        }
+
+        void UniformBlockBinding_State(GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding) {
+            auto programObject = MG_State::pGLContext->GetCurrentProgram();
+            if (programObject == nullptr) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "There is no current program object."));
+                return;
+            }
+            if (!programObject->GetLinkStatus()) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`program` is not a program object that has been linked."));
+                return;
+            }
+            if (!programObject->IsActiveUniformBlock(uniformBlockIndex)) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidValue,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`uniformBlockIndex` is greater than or equal to the value of `GL_ACTIVE_UNIFORM_BLOCKS` or is not the index of an active uniform block in program."));
+                return;
+            }
+            programObject->SetUniformBlockBinding(uniformBlockIndex, uniformBlockBinding);
+        }
+
+        void GetActiveUniformBlockiv_State(GLuint program, GLuint uniformBlockIndex, GLenum pname, GLint* params) {
+            auto programObject = MG_State::pGLContext->GetCurrentProgram();
+            if (programObject == nullptr) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "There is no current program object."));
+                return;
+            }
+            if (!programObject->GetLinkStatus()) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`program` is not a program object that has been linked."));
+                return;
+            }
+            if (!programObject->IsActiveUniformBlock(uniformBlockIndex)) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidValue,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`uniformBlockIndex` is greater than or equal to the value of `GL_ACTIVE_UNIFORM_BLOCKS` or is not the index of an active uniform block in program."));
+                return;
+            }
+            switch (pname) {
+                case GL_UNIFORM_BLOCK_DATA_SIZE: {
+                    *params = programObject->GetUBOSizeAt(uniformBlockIndex);
+                    MGLOG_D("%s: GL_UNIFORM_BLOCK_DATA_SIZE = %d", __func__, *params);
+                    break;
+                }
+                case GL_UNIFORM_BLOCK_NAME_LENGTH: {
+                    *params = programObject->GetUniformBlockName(uniformBlockIndex).length() + 1;
+                    MGLOG_D("%s: GL_UNIFORM_BLOCK_NAME_LENGTH = %d", __func__, *params);
+                    break;
+                }
+                case GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS: {
+                    // TODO: deduct global ubo?
+                    *params = programObject->GetActiveUniformBlocksCount();
+                    MGLOG_D("%s: GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS = %d", __func__, *params);
+                    break;
+                }
+                case GL_UNIFORM_BLOCK_BINDING: {
+                    // TODO
+                    MGLOG_D("%s: GL_UNIFORM_BLOCK_BINDING = <TODO>", __func__, *params);
+                }
+                case GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES:
+                case GL_UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER:
+                case GL_UNIFORM_BLOCK_REFERENCED_BY_TESS_CONTROL_SHADER:
+                case GL_UNIFORM_BLOCK_REFERENCED_BY_TESS_EVALUATION_SHADER:
+                case GL_UNIFORM_BLOCK_REFERENCED_BY_GEOMETRY_SHADER:
+                case GL_UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER:
+                case GL_UNIFORM_BLOCK_REFERENCED_BY_COMPUTE_SHADER:
+                default:
+                    MGLOG_E("%s: unknown pname = %p %s", __func__, pname, MG_Util::ConvertGLEnumToString(pname).c_str());
+                    MG_State::pGLContext->RecordError(
+                            ErrorCode::InvalidEnum,
+                            MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`pname` is not one of the accepted tokens."));
+                    break;
+            }
+        }
+
+        void GetActiveUniformBlockName_State(GLuint program, GLuint uniformBlockIndex, GLsizei bufSize, GLsizei* length, GLchar* uniformBlockName) {
+            auto programObject = TryToGetProgramObject(program);
+            if (!programObject) return;
+            if (!programObject->GetLinkStatus()) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`program` is not a program object that has been linked."));
+                return;
+            }
+            if (!programObject->IsActiveUniformBlock(uniformBlockIndex)) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidValue,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`uniformBlockIndex` is greater than or equal to the value of `GL_ACTIVE_UNIFORM_BLOCKS` or is not the index of an active uniform block in program."));
+                return;
+            }
+            const auto& name = programObject->GetUniformBlockName(uniformBlockIndex);
+            CopyStr(bufSize, length, uniformBlockName, name.c_str(), name.length());
+            MGLOG_D("%s: \"%s\" at uniformBlockIndex %02d, length = %d", __func__, uniformBlockName, uniformBlockIndex, *length);
+        }
+
+        void BindFragDataLocation_State(GLuint program, GLuint colorNumber, const char* name) {
+            auto programObject = TryToGetProgramObject(program);
+            if (programObject == nullptr) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`program` is not the name of a program object."));
+                return;
+            }
+            if (strncmp(name, "gl_", 3) == 0) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__,
+                                                     "`name` starts with the reserved prefix `gl_`."));
+                return;
+            }
+            // TODO: Emit error "if `colorNumber` is greater than or equal to `GL_MAX_DRAW_BUFFERS`"
+
+            MGLOG_D("%s: loc %02d = \"%s\"", __func__, colorNumber, name);
+            programObject->SetExplicitFragmentOutLocation(colorNumber, name);
+        }
+
+        GLint GetFragDataLocation_State(GLuint program, const char* name) {
+            auto programObject = TryToGetProgramObject(program);
+            if (programObject == nullptr) {
+                MG_State::pGLContext->RecordError(
+                        ErrorCode::InvalidOperation,
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", __func__, "`program` is not the name of a program object."));
+                return -1;
+            }
+            return programObject->GetFragmentDataLocation(name);
+        }
+
+
         void ValidateProgram_State(GLuint program) {
-            THROW_UNIMPL_EXCEPTION;
+//            THROW_UNIMPL_EXCEPTION;
         }
 
         void AttachShader(GLuint program, GLuint shader) {
@@ -879,6 +1054,30 @@ namespace MobileGL {
 
         void UniformMatrix4fv(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value) {
             UniformMatrix4fv_State(location, count, transpose, value);
+        }
+
+        GLuint GetUniformBlockIndex(GLuint program, const GLchar* uniformBlockName) {
+            return GetUniformBlockIndex_State(program, uniformBlockName);
+        }
+
+        void UniformBlockBinding(GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding) {
+            UniformBlockBinding_State(program, uniformBlockIndex, uniformBlockBinding);
+        }
+
+        void GetActiveUniformBlockiv(GLuint program, GLuint uniformBlockIndex, GLenum pname, GLint* params) {
+            GetActiveUniformBlockiv_State(program, uniformBlockIndex, pname, params);
+        }
+
+        void GetActiveUniformBlockName(GLuint program, GLuint uniformBlockIndex, GLsizei bufSize, GLsizei* length, GLchar* uniformBlockName) {
+            GetActiveUniformBlockName_State(program, uniformBlockIndex, bufSize, length, uniformBlockName);
+        }
+
+        void BindFragDataLocation(GLuint program, GLuint colorNumber, const char* name) {
+            BindFragDataLocation_State(program, colorNumber, name);
+        }
+
+        GLint GetFragDataLocation(GLuint program, const char* name) {
+            return GetFragDataLocation_State(program, name);
         }
 
         void ValidateProgram(GLuint program) {

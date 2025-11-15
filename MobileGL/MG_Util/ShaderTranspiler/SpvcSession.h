@@ -73,14 +73,15 @@ namespace MobileGL {
                 spvc_result CreateOptions(spvc_compiler_options* options);
                 spvc_result SetOptions(spvc_compiler_options options);
                 Vector<InterfaceVariable> GetShaderInterface(spvc_resource_type resource_type) const;
+                spvc_result SetVertexAttribLocation(const UnorderedMap<String, Uint>& location);
                 spvc_result Compile(const char** result);
                 const SpvcMetadata& GetMetadata() const;
                 const char* GetLastErrorString() const;
 
-            private:
                 // Should be called once, and only once, for every SPIR-V binary
                 spvc_result ParseMetaData();
 
+            private:
                 spvc_context context = nullptr;
                 spvc_parsed_ir ir = nullptr;
                 spvc_compiler compiler = nullptr;

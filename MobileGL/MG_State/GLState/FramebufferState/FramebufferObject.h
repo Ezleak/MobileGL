@@ -82,18 +82,23 @@ namespace MobileGL {
             public:
                 using TargetEnum = FramebufferTarget;
 
-                FramebufferObject();
+                FramebufferObject(Uint externalIndex);
 
                 void AttachTexture(FramebufferAttachmentType type, SharedPtr<ITextureObject> texture, int level = 0);
                 void AttachRenderbuffer(FramebufferAttachmentType type,
                                         std::shared_ptr<RenderbufferObjectStub> renderbuffer);
                 void Detach(FramebufferAttachmentType type);
                 const FramebufferAttachment& GetAttachment(FramebufferAttachmentType type) const;
+                const Array<FramebufferAttachment,
+                            static_cast<SizeT>(FramebufferAttachmentType::FramebufferAttachmentTypeCount)>&
+                GetAllAttachments() const;
                 Bool CheckCompleteness() const;
                 void SetDrawBuffers(const std::vector<FramebufferAttachmentType>& buffers);
                 const Vector<FramebufferAttachmentType>& GetDrawBuffers() const;
+                Uint GetExternalIndex() const;
 
             private:
+                const Uint m_externalIndex = 0;
                 Array<FramebufferAttachment,
                       static_cast<SizeT>(FramebufferAttachmentType::FramebufferAttachmentTypeCount)>
                     m_attachments;

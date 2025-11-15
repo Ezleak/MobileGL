@@ -32,6 +32,10 @@ namespace MobileGL {
                 Vector<Uint> GenBufferNames(Uint number);
                 SharedPtr<BufferObject> GetBufferObject(Uint index);
                 BindingSlot<BufferObject>& GetBufferBindingSlot(BufferTarget target);
+                BindingSlotRange1D<BufferObject>& GetBufferBindingPoint(BufferTarget target, Uint index);
+                constexpr SizeT GetBufferBindingPointCount(BufferTarget target) const {
+                    return m_bufferState.GetBindingPointCount(target);
+                }
                 SharedPtr<BufferObject> CreateBufferObject(Uint index);
                 void MarkBufferObjectForDeletion(Uint index);
                 Bool ValidateBufferName(Uint index) const;
@@ -90,8 +94,11 @@ namespace MobileGL {
                 Float GetClearDepth() const;
                 void SetPixelStoreParam(PixelStoreParam param, Int value);
                 Int GetPixelStoreParam(PixelStoreParam param) const;
+                PixelStoreParameters GetPixelStoreParameters(Bool isUnpack) const;
                 void SetCullFaceMode(CullFaceMode mode);
                 CullFaceMode GetCullFaceMode() const;
+                void SetScissorBox(IntVec4 box);      // x, y, width, height
+                const IntVec4& GetScissorBox() const; // x, y, width, height
 
                 // Framebuffer
                 Vector<Uint> GenFramebufferNames(Uint number);

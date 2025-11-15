@@ -32,6 +32,7 @@
 #include <functional>
 #include <string_view>
 #include <unordered_map>
+#include <mutex>
 
 // Include FastSTL
 #include <FastSTL/UnorderedMap.h>
@@ -54,7 +55,6 @@
 
 // Include glslang headers
 #include <glslang/Include/Types.h>
-#include <glslang/Public/ShaderLang.h>
 #include <glslang/Public/ShaderLang.h>
 #include <glslang/SPIRV/GlslangToSpv.h>
 #include <glslang/Include/intermediate.h>

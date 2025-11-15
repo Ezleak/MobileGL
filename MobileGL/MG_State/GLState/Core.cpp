@@ -52,10 +52,21 @@ namespace MobileGL {
 
             BindingSlot<BufferObject>& GLContext::GetBufferBindingSlot(BufferTarget target) {
                 if (target == BufferTarget::Index) {
-                    return m_vertexArrayState.GetBoundVertexArray()->GetIndexBufferBindingSlot();
+                    const auto& vao = m_vertexArrayState.GetBoundVertexArray();
+                    if (vao) {
+                        return vao->GetIndexBufferBindingSlot();
+                    } else {
+                        assert(false);
+                        static BindingSlot<BufferObject> defaultSlot(BufferTarget::Index);
+                        return defaultSlot;
+                    }
                 }
 
                 return m_bufferState.GetBindingSlot(target);
+            }
+
+            BindingSlotRange1D<BufferObject>& GLContext::GetBufferBindingPoint(BufferTarget target, Uint index) {
+                return m_bufferState.GetBindingPoint(target, index);
             }
 
             SharedPtr<BufferObject> GLContext::CreateBufferObject(Uint index) {
@@ -278,12 +289,24 @@ namespace MobileGL {
                 return m_renderState.GetPixelStoreParam(param);
             }
 
+            PixelStoreParameters GLContext::GetPixelStoreParameters(Bool isUnpack) const {
+                return m_renderState.GetPixelStoreParameters(isUnpack);
+            }
+
             void GLContext::SetCullFaceMode(CullFaceMode mode) {
                 m_renderState.SetCullFaceMode(mode);
             }
 
             CullFaceMode GLContext::GetCullFaceMode() const {
                 return m_renderState.GetCullFaceMode();
+            }
+
+            void GLContext::SetScissorBox(IntVec4 box) {
+                m_renderState.SetScissorBox(box);
+            }
+
+            const IntVec4& GLContext::GetScissorBox() const {
+                return m_renderState.GetScissorBox();
             }
 
             // Framebuffer

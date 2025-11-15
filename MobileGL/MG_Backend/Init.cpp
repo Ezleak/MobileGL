@@ -1,16 +1,15 @@
 #include "Backends.h"
+#include "MG_Util/Types.h"
 #include <Config.h>
 #include <MG_Util/BackendLoaders/OpenGL/Loader.h>
 #include <MG_Util/Converters/MGToStr/GLExtensionConverter.h>
 
 namespace MobileGL {
     namespace MG_Config {
-        RendererInfo* RendererInfoPtr = nullptr;
-    }
+        UniquePtr<RendererInfo> RendererInfoPtr = nullptr;
+    } // namespace MG_Config
 
     namespace MG_Backend {
-        static RendererInfo RendererInfo;
-
         void LogBackendInfo() {
             if (MG_Config::RendererInfoPtr) {
                 MGLOG_I("MobileGL Backend Info:");
@@ -53,21 +52,19 @@ namespace MobileGL {
 #if MOBILEGL_BACKEND == MOBILEGL_BACKEND_DILIGENT
             switch (MG_Config::Backend::Diligent::SpecificBackend) {
             case MG_Backend::Diligent::SpecificBackendType::Vulkan:
-                RendererInfo = MG_Backend::Diligent::RendererInfoVulkan;
+                MG_Config::RendererInfoPtr = MakeUnique<RendererInfo>(Diligent::RendererInfoVulkan);
                 break;
             case MG_Backend::Diligent::SpecificBackendType::Metal:
-                RendererInfo = MG_Backend::Diligent::RendererInfoMetal;
+                MG_Config::RendererInfoPtr = MakeUnique<RendererInfo>(Diligent::RendererInfoMetal);
                 break;
             default:
                 throw RuntimeError("Unsupported renderer type");
             }
 #elif MOBILEGL_BACKEND == MOBILEGL_BACKEND_TYPE_DIRECT_GLES
-            RendererInfo = MG_Backend::DirectGLES::RendererInfo;
+            MG_Config::RendererInfoPtr = MakeUnique<RendererInfo>(DirectGLES::RendererInfo);
 #else
-            RendererInfo = RendererInfoUnknown;
+            MG_Config::RendererInfoPtr = MakeUnique<RendererInfo>(Unknown::RendererInfoUnknown);
 #endif
-
-            MG_Config::RendererInfoPtr = &RendererInfo;
 
             InitSpecificBackendLibs();
             LogBackendInfo();

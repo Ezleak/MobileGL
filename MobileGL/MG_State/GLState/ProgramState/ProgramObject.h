@@ -9,14 +9,17 @@ namespace MobileGL {
         namespace GLState {
             class ProgramObject {
             public:
-                ProgramObject(const Uint id) : m_id(id) {}
+                ProgramObject(Uint externalIndex) : m_externalIndex(externalIndex) {}
                 bool ShaderIsAttached(SharedPtr<ShaderObject> shader);
                 bool AttachShader(SharedPtr<ShaderObject> shader);
                 SizeT DetachShader(SharedPtr<ShaderObject> shader);
+                SizeT RemoveShader(SharedPtr<ShaderObject> shader);
                 void Link();
                 void MarkAsDeleted();
 
-                void SetExplicitAttribLocation(Uint index, const char* name);
+                void SetExplicitVertexInLocation(Uint index, const char* name);
+                void SetExplicitFragmentOutLocation(Uint index, const char* name);
+                Int GetFragmentDataLocation(const char* name);
 
                 Vector<SharedPtr<ShaderObject>>& GetAttachedShaders();
                 const String& GetInfoLog() const { return m_infoLog; }
@@ -25,16 +28,29 @@ namespace MobileGL {
                 Uint GetMaxUniformLocation() const { return m_maxUniformLocation; }
                 Int GetUniformLocation(const String& name) {
                     const auto it = m_uniformLocations.find(name);
-                    return (it == m_uniformLocations.end()) ? -1 : (Int)it->second;
+                    if (it == m_uniformLocations.end()) return -1;
+                    return (Int)it->second;
                 }
-                GLenum GetUniformType(Uint index) const { return m_uniformTypes[index]; }
 
-                Bool IsUniformOpaqueAtLocation(Uint location) const { return m_uniformIsOpaqueType[location]; }
+                GLenum GetUniformType(Uint location) const {
+                    auto& uniform = m_program->getUniform(m_uniformIndexInTProgram[location]);
+                    return uniform.glDefineType;
+                }
 
-                const String& GetUniformName(Uint index) const { return m_uniformNames[index]; }
+                const glslang::TType* GetUniformTType(Uint location) const {
+                    auto& uniform = m_program->getUniform(m_uniformIndexInTProgram[location]);
+                    return uniform.getType();
+                }
+
+                Bool IsUniformOpaqueAtLocation(Uint location) const { return GetUniformTType(location)->isOpaque(); }
+
+                const String& GetUniformName(Uint location) const {
+                    auto& uniform = m_program->getUniform(m_uniformIndexInTProgram[location]);
+                    return uniform.name;
+                }
                 Uint GetUniformOffset(Uint location) const { return m_uniformOffsets[location]; }
                 Uint GetUniformSizesInBytes(Uint location) const {
-                    return MG_Util::GetGLTypeSize(m_uniformTypes[location]);
+                    return MG_Util::GetGLTypeSize(GetUniformType(location));
                 }
 
                 Int GetAttributeLocation(const String& name) {
@@ -44,6 +60,15 @@ namespace MobileGL {
                 GLenum GetAttribType(Uint index) const { return m_attribTypes[index]; }
                 const String& GetAttribName(Uint index) const { return m_attribs[index]; }
                 void* MapUBO() { return m_uboScratch.data(); }
+                Uint GetUBOSize() const { return static_cast<Uint>(m_uboScratch.size()); }
+
+                void SetUniformSamplerOrImageUnitIndex(Uint location, Int unit) {
+                    m_uniformSamplerOrImageUnitIndex[location] = unit;
+                }
+
+                Int GetUniformSamplerOrImageUnitIndex(Uint location) const {
+                    return m_uniformSamplerOrImageUnitIndex[location];
+                }
 
                 Bool GetDeleteStatus() const { return m_deleteStatus; }
                 Bool GetLinkStatus() const { return m_linkStatus; }
@@ -53,37 +78,75 @@ namespace MobileGL {
                 Int GetActiveUniformBlocksCount() const { return m_program->getNumUniformBlocks(); }
                 Int GetActiveAttributesMaxLength() const { return m_attribInNameMaxLength; }
                 Int GetActiveUniformBlocksMaxNameLength() const { return m_uniformBlockNameMaxLength; }
+                Uint GetUniformBlockIndex(const char* name) const {
+                    auto it = m_uniformBlockIndexByName.find(name);
+                    if (it != m_uniformBlockIndexByName.end()) return it->second;
+                    return 0xFFFFFFFFu; // GL_INVALID_INDEX
+                }
+                Bool IsActiveUniformBlock(Uint index) const {
+                    if (index >= GetActiveUniformBlocksCount()) return false;
+                    return true;
+                }
+                Uint GetUBOSizeAt(Uint index) const {
+                    if (!IsActiveUniformBlock(index)) return 0;
+                    return m_program->getUniformBlock(index).size;
+                }
+
+                const String& GetUniformBlockName(Uint index) const {
+                    auto& ubo = m_program->getUniformBlock(index);
+                    return ubo.name;
+                }
+
+                // Set by glUniformBlockBinding
+                void SetUniformBlockBinding(Uint index, Uint binding) { m_uniformBlockBinding[index] = binding; }
+
+                Uint GetUniformBlockBinding(Uint index) const { return m_uniformBlockBinding[index]; }
+
+                Vector<Vector<unsigned>>& GetGeneratedSpirv() { return m_generatedSpirv; }
+
+                Uint GetExternalIndex() const { return m_externalIndex; }
+
+//                const UnorderedMap<String, Uint>& GetAttribLocationMap() const { return m_attribLocation; }
 
             private:
                 void DoReflection();
                 void GenerateBinary();
                 void WaitUntilGenerationCompleted();
-                // void PreLink();
-                // void PostLink();
 
-                const Uint m_id = 0;
+                const Uint m_externalIndex = 0;
                 Vector<SharedPtr<ShaderObject>> m_shaders;
+                Vector<SharedPtr<ShaderObject>> m_detachedShaders; // Store detached shaders and remove on next link
 
                 SharedPtr<glslang::TProgram> m_program;
 
                 Vector<Vector<unsigned>> m_generatedSpirv;
 
-                // Attributes
+                // Attributes (Vertex in)
                 UnorderedMap<String, Uint> m_explicitAttribLocations;
                 Vector<String> m_attribs;
                 Vector<GLenum> m_attribTypes;
+                // For SpvcSession::SetVertexAttribLocation()
+//                UnorderedMap<String, Uint> m_attribLocation;
+
+                // FragData (Frag out)
+                UnorderedMap<String, Uint> m_explicitFragDataLocation;
 
                 // Uniforms
-                // MG_Util::ShaderTranspiler::SpvcMetadata m_metadata;
-
                 UnorderedMap<String, Uint> m_uniformLocations;
                 // Ordered by location,
-                // aka. m_uniformNames[loc] == "name at location `loc`"
-                Vector<String> m_uniformNames;
-                // ditto.
-                Vector<GLenum> m_uniformTypes;
-                Vector<Bool> m_uniformIsOpaqueType;
-                Vector<Int> m_uniformArraySizes;
+                // aka. m_uniformIndexInTProgram[loc] == "uniform index of TProgram at location `loc`"
+                Vector<Int> m_uniformIndexInTProgram;
+                // ditto. Will be set at glUniform1i
+                Vector<Int> m_uniformSamplerOrImageUnitIndex;
+
+                // Ordered by uniform block index
+                // index is DIFFERENT from binding!!!
+                //
+                // Let's define UniformBlockIndex == the order at glslang getUniformBlock()
+                // aka `i = glGetUniformBlockIndex(prog, "BlockName")` implies:
+                // `prog->getUniformBlock(i) == "BlockName"`
+                UnorderedMap<String, Uint> m_uniformBlockIndexByName;
+                Vector<Int> m_uniformBlockBinding;
 
                 // Need to be reflected after linking of SPIR-V binary
                 Vector<Uint> m_uniformOffsets;

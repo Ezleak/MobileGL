@@ -1,5 +1,6 @@
 #pragma once
 #include "MG_Util/Math/VectorTypes.h"
+#include "MG_Util/Types.h"
 #include <Includes.h>
 
 namespace MobileGL {
@@ -108,6 +109,17 @@ namespace MobileGL {
         Unknown = -1
     };
 
+    struct PixelStoreParameters {
+        Bool SwapBytes = false;
+        Bool LSBFirst = false;
+        Int RowLength = 0;
+        Int ImageHeight = 0;
+        Int SkipPixels = 0;
+        Int SkipRows = 0;
+        Int SkipImages = 0;
+        Int Alignment = 4;
+    };
+
     namespace MG_State {
         namespace GLState {
             class RenderState {
@@ -146,10 +158,15 @@ namespace MobileGL {
                 // Pixel Store
                 void SetPixelStoreParam(PixelStoreParam param, Int value);
                 Int GetPixelStoreParam(PixelStoreParam param) const;
+                PixelStoreParameters GetPixelStoreParameters(Bool isUnpack) const;
 
                 // Cull Face
                 void SetCullFaceMode(CullFaceMode mode);
                 CullFaceMode GetCullFaceMode() const;
+
+                // Scissor
+                void SetScissorBox(IntVec4 box);      // x, y, width, height
+                const IntVec4& GetScissorBox() const; // x, y, width, height
 
             private:
                 // Rasterization
@@ -175,11 +192,16 @@ namespace MobileGL {
                 Float m_clearDepth = 1.0f;
 
                 // Pixel Store
-                Array<Int, static_cast<SizeT>(PixelStoreParam::PixelStoreParamCount)> m_pixelStoreParams;
+                PixelStoreParameters m_packParameters;
+                PixelStoreParameters m_unpackParameters;
 
                 // Cull Face
                 Bool m_cullFaceEnabled = false;
                 CullFaceMode m_cullFaceMode = CullFaceMode::Back;
+
+                // Scissor
+                Bool m_scissorTestEnabled = false;
+                IntVec4 m_scissorBox = IntVec4(0, 0, 0, 0); // x, y, width, height
             };
         } // namespace GLState
     } // namespace MG_State

@@ -63,7 +63,7 @@ namespace MobileGL {
             }
 
             // FramebufferObject
-            FramebufferObject::FramebufferObject() {
+            FramebufferObject::FramebufferObject(Uint externalIndex) : m_externalIndex(externalIndex) {
                 m_attachments.fill(FramebufferAttachment(false));
             }
 
@@ -86,6 +86,12 @@ namespace MobileGL {
 
             const FramebufferAttachment& FramebufferObject::GetAttachment(FramebufferAttachmentType type) const {
                 return m_attachments[static_cast<SizeT>(type)];
+            }
+
+            const Array<FramebufferAttachment,
+                        static_cast<SizeT>(FramebufferAttachmentType::FramebufferAttachmentTypeCount)>&
+            FramebufferObject::GetAllAttachments() const {
+                return m_attachments;
             }
 
             Bool FramebufferObject::CheckCompleteness() const {
@@ -129,6 +135,9 @@ namespace MobileGL {
                 return m_drawBuffers;
             }
 
+            Uint FramebufferObject::GetExternalIndex() const {
+                return m_externalIndex;
+            }
         } // namespace GLState
     } // namespace MG_State
 } // namespace MobileGL

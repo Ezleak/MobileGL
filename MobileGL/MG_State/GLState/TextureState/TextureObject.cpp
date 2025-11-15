@@ -5,8 +5,9 @@ namespace MobileGL {
     namespace MG_State {
         namespace GLState {
             // TextureObjectBase implementations
-            TextureObjectBase::TextureObjectBase(TextureTarget target) : m_target(target) {
-                m_sampler = MakeShared<SamplerObject>();
+            TextureObjectBase::TextureObjectBase(TextureTarget target, Uint externalIndex)
+                : m_target(target), m_externalIndex(externalIndex) {
+                m_sampler = MakeShared<SamplerObject>(0);
             }
 
             void TextureObjectBase::SetMipmapLevel(const MipmapLevelInput& level) {
@@ -57,8 +58,10 @@ namespace MobileGL {
             }
 
             MipmapLevelInternal& TextureObjectBase::GetMipmap(Int index) {
-                if (index > m_mipmaps.size()) {
-                    // fallback to the last mipmap
+                if (index >= m_mipmaps.size()) {
+                    MGLOG_F("TextureObjectBase::GetMipmap: Requested mipmap level %d exceeds available levels %zu",
+                            index, m_mipmaps.size());
+                    assert(false && "Requested mipmap level exceeds available levels");
                     index = static_cast<Int>(m_mipmaps.size() - 1);
                 }
                 return m_mipmaps[index];
@@ -68,30 +71,103 @@ namespace MobileGL {
                 m_internalFormat = format;
             }
 
+            void TextureObjectBase::UnmarkMipmapDirty(Int index) {
+                if (index >= 0 && index < static_cast<Int>(m_mipmaps.size())) {
+                    m_mipmaps[index].dirty = false;
+                }
+            }
+
+            Uint TextureObjectBase::GetExternalIndex() const {
+                return m_externalIndex;
+            }
+
+            const FloatVec4& TextureObjectBase::GetBorderColor() const {
+                return m_borderColor;
+            }
+
+            void TextureObjectBase::SetBorderColor(const FloatVec4& color) {
+                m_borderColor = color;
+            }
+
+            TextureSwizzleParam TextureObjectBase::GetSwizzleParam(TextureSwizzleParam param) const {
+                switch (param) {
+                case TextureSwizzleParam::Red:
+                    return m_swizzleParams[0];
+                case TextureSwizzleParam::Green:
+                    return m_swizzleParams[1];
+                case TextureSwizzleParam::Blue:
+                    return m_swizzleParams[2];
+                case TextureSwizzleParam::Alpha:
+                    return m_swizzleParams[3];
+                default:
+                    MGLOG_F("TextureObjectBase::GetSwizzleParam: Invalid TextureSwizzleParam: %d",
+                            static_cast<Int>(param));
+                    assert(false && "Invalid TextureSwizzleParam");
+                    return TextureSwizzleParam::Red;
+                }
+            }
+
+            void TextureObjectBase::SetSwizzleParam(TextureSwizzleParam param, TextureSwizzleParam value) {
+                switch (param) {
+                case TextureSwizzleParam::Red:
+                    m_swizzleParams[0] = value;
+                    break;
+                case TextureSwizzleParam::Green:
+                    m_swizzleParams[1] = value;
+                    break;
+                case TextureSwizzleParam::Blue:
+                    m_swizzleParams[2] = value;
+                    break;
+                case TextureSwizzleParam::Alpha:
+                    m_swizzleParams[3] = value;
+                    break;
+                default:
+                    MGLOG_F("TextureObjectBase::SetSwizzleParam: Invalid TextureSwizzleParam: %d",
+                            static_cast<Int>(param));
+                    assert(false && "Invalid TextureSwizzleParam");
+                    break;
+                }
+            }
+
+            const UintVec2& TextureObjectBase::GetLevelRange() const {
+                return m_levelRange;
+            }
+
+            void TextureObjectBase::SetBaseLevel(Uint baseLevel) {
+                m_levelRange.x() = baseLevel;
+            }
+
+            void TextureObjectBase::SetMaxLevel(Uint maxLevel) {
+                m_levelRange.y() = maxLevel;
+            }
+
             // TextureObject1D
-            TextureObject1D::TextureObject1D() : TextureObjectBase(TextureTarget::Texture1D) {}
+            TextureObject1D::TextureObject1D(Uint externalIndex)
+                : TextureObjectBase(TextureTarget::Texture1D, externalIndex) {}
 
             void TextureObject1D::SetMipmapImpl(const MipmapLevelInput& level) {
                 if (level.size.x() > 0) {
-                    m_mipmaps.push_back(level);
+                    m_mipmaps.push_back(MipmapLevelInternal(level));
                 }
             }
 
             // TextureObject2D
-            TextureObject2D::TextureObject2D() : TextureObjectBase(TextureTarget::Texture2D) {}
+            TextureObject2D::TextureObject2D(Uint externalIndex)
+                : TextureObjectBase(TextureTarget::Texture2D, externalIndex) {}
 
             void TextureObject2D::SetMipmapImpl(const MipmapLevelInput& level) {
                 if (level.size.x() > 0 && level.size.y() > 0) {
-                    m_mipmaps.push_back(level);
+                    m_mipmaps.push_back(MipmapLevelInternal(level));
                 }
             }
 
             // TextureObject3D
-            TextureObject3D::TextureObject3D() : TextureObjectBase(TextureTarget::Texture3D) {}
+            TextureObject3D::TextureObject3D(Uint externalIndex)
+                : TextureObjectBase(TextureTarget::Texture3D, externalIndex) {}
 
             void TextureObject3D::SetMipmapImpl(const MipmapLevelInput& level) {
                 if (level.size.x() > 0 && level.size.y() > 0 && level.size.z() > 0) {
-                    m_mipmaps.push_back(level);
+                    m_mipmaps.push_back(MipmapLevelInternal(level));
                 }
             }
 

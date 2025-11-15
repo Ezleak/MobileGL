@@ -20,7 +20,7 @@ namespace MobileGL {
             public:
                 static constexpr int MAX_VERTEX_ATTRIBS = 16;
 
-                VertexArrayObject();
+                VertexArrayObject(Uint externIndex);
 
                 void EnableAttribute(Uint index);
                 void DisableAttribute(Uint index);
@@ -34,9 +34,18 @@ namespace MobileGL {
                 BindingSlot<BufferObject>& GetIndexBufferBindingSlot();
 
                 const VertexAttribute& GetAttribute(Uint index) const;
+                const Array<VertexAttribute, MAX_VERTEX_ATTRIBS>& GetAllAttributes() const;
+
+                const Vector<Uint>& GetDirtyAttributeIndices() const;
+                void ClearDirtyAttributes();
+                Uint GetExternalIndex() const;
 
             private:
+                void MarkAttributeDirty(Uint index);
+
+                const Uint m_externalIndex = 0;
                 Array<VertexAttribute, MAX_VERTEX_ATTRIBS> m_attributes;
+                Vector<Uint> m_dirtyAttributes;
                 BindingSlot<BufferObject> m_indexBufferBindingSlot;
             };
         } // namespace GLState

@@ -53,8 +53,14 @@ namespace MobileGL {
         return static_cast<std::remove_reference_t<T>&&>(t);
     }
     template <typename T>
-    inline constexpr void Copy(const T* src, T* dest, SizeT count) {
+    inline void Copy(const T* src, T* dest, SizeT count) {
         std::copy(src, src + count, dest);
+    }
+    inline void Memcpy(void* dest, const void* src, SizeT size) {
+        std::memcpy(dest, src, size);
+    }
+    inline void Memset(void* dest, Int value, SizeT size) {
+        std::memset(dest, value, size);
     }
     template <typename... Ts>
     constexpr auto ToArray(Ts&&... elems) {
@@ -95,7 +101,7 @@ namespace MobileGL {
     // represents a range of [start, end)
     struct Range1D {
         SizeT start = 0;
-        SizeT end = 0;
+        SizeT end = ~0u;
 
         void Update(SizeT newStart, SizeT newEnd) {
             assert(newStart <= newEnd);
@@ -139,6 +145,30 @@ namespace MobileGL {
     private:
         TargetEnum m_target;
         SharedPtr<ObjectType> m_boundObject;
+    };
+
+    template <typename ObjectType>
+    class BindingSlotRange1D: public BindingSlot<ObjectType> {
+    public:
+        using TargetEnum = typename ObjectType::TargetEnum;
+
+        BindingSlotRange1D() : BindingSlot<ObjectType>() {}
+        explicit BindingSlotRange1D(TargetEnum target, const Range1D& range = Range1D())
+                : BindingSlot<ObjectType>(target), m_range(range) {}
+
+        Range1D GetRange() const {
+            return m_range;
+        }
+
+        void SetRange(const Range1D& range) {
+            m_range = range;
+        }
+
+        void ClearRange() {
+            m_range = Range1D();
+        }
+    private:
+        Range1D m_range;
     };
 
     struct Version {
