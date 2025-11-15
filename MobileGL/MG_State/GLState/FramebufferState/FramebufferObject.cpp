@@ -21,7 +21,7 @@ namespace MobileGL {
                 return false;
             }
 
-            Bool FramebufferAttachment::IsEmpty() {
+            Bool FramebufferAttachment::IsEmpty() const {
                 return m_texture == nullptr && m_renderbuffer == nullptr;
             }
 
@@ -65,6 +65,8 @@ namespace MobileGL {
             // FramebufferObject
             FramebufferObject::FramebufferObject(Uint externalIndex) : m_externalIndex(externalIndex) {
                 m_attachments.fill(FramebufferAttachment(false));
+                m_drawBuffers.fill(FramebufferAttachmentType::None);
+                m_drawBuffers[0] = FramebufferAttachmentType::Color0;
             }
 
             void FramebufferObject::AttachTexture(FramebufferAttachmentType type, SharedPtr<ITextureObject> texture,
@@ -126,12 +128,22 @@ namespace MobileGL {
                 return true;
             }
 
-            void FramebufferObject::SetDrawBuffers(const std::vector<FramebufferAttachmentType>& buffers) {
-                m_drawBuffers = buffers;
+            void FramebufferObject::SetDrawBuffer(Uint index, FramebufferAttachmentType buffer) {
+                if (m_drawBuffers[index] == buffer) return;
                 m_drawBuffersDirty = true;
+                m_drawBuffers[index] = buffer;
             }
 
-            const Vector<FramebufferAttachmentType>& FramebufferObject::GetDrawBuffers() const {
+            //            void FramebufferObject::SetDrawBuffers(const Vector<FramebufferAttachmentType>& buffers) {
+            //                m_drawBuffers = buffers;
+            //                m_drawBuffersDirty = true;
+            //            }
+            //            void SetDrawBuffer(Uint index, FramebufferAttachmentType buffer) {
+            //
+            //            }
+
+            const Array<FramebufferAttachmentType, FramebufferObject::MAX_DRAW_BUFFERS>& FramebufferObject::
+                GetDrawBuffers() const {
                 return m_drawBuffers;
             }
 

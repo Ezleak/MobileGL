@@ -12,6 +12,16 @@ namespace MobileGL {
     };
 
     enum class FramebufferAttachmentType {
+        None,
+
+        FrontLeft,
+        FrontRight,
+        BackLeft,
+        BackRight,
+
+        Depth,
+        Stencil,
+
         Color0,
         Color1,
         Color2,
@@ -44,8 +54,7 @@ namespace MobileGL {
         Color29,
         Color30,
         Color31,
-        Depth,
-        Stencil,
+
         FramebufferAttachmentTypeCount,
         Unknown = -1
     };
@@ -63,7 +72,7 @@ namespace MobileGL {
 
                 Bool IsTexture() const;
                 Bool IsRenderbuffer() const;
-                Bool IsEmpty();
+                Bool IsEmpty() const;
                 SharedPtr<MG_State::GLState::ITextureObject> GetTexture() const;
                 SharedPtr<RenderbufferObjectStub> GetRenderbuffer() const;
                 Int GetTextureLevel() const;
@@ -81,6 +90,7 @@ namespace MobileGL {
             class FramebufferObject {
             public:
                 using TargetEnum = FramebufferTarget;
+                static constexpr uint MAX_DRAW_BUFFERS = 8;
 
                 FramebufferObject(Uint externalIndex);
 
@@ -93,8 +103,12 @@ namespace MobileGL {
                             static_cast<SizeT>(FramebufferAttachmentType::FramebufferAttachmentTypeCount)>&
                 GetAllAttachments() const;
                 Bool CheckCompleteness() const;
-                void SetDrawBuffers(const std::vector<FramebufferAttachmentType>& buffers);
-                const Vector<FramebufferAttachmentType>& GetDrawBuffers() const;
+                // aka. `buffer` as in glDrawBuffers/glReadBuffers
+                void SetDrawBuffer(Uint index, FramebufferAttachmentType buffer);
+                bool DrawBuffersIsDirty() const { return m_drawBuffersDirty; }
+                void ClearDrawBuffersDirtyState() { m_drawBuffersDirty = false; }
+                const Array<FramebufferAttachmentType, MAX_DRAW_BUFFERS>& GetDrawBuffers() const;
+                FramebufferAttachmentType GetReadBuffer() const { return m_readBuffer; }
                 Uint GetExternalIndex() const;
 
             private:
@@ -102,8 +116,9 @@ namespace MobileGL {
                 Array<FramebufferAttachment,
                       static_cast<SizeT>(FramebufferAttachmentType::FramebufferAttachmentTypeCount)>
                     m_attachments;
-                Bool m_drawBuffersDirty = true;
-                Vector<FramebufferAttachmentType> m_drawBuffers;
+                Bool m_drawBuffersDirty = false;
+                Array<FramebufferAttachmentType, MAX_DRAW_BUFFERS> m_drawBuffers;
+                FramebufferAttachmentType m_readBuffer = FramebufferAttachmentType::Color0;
             };
 
         } // namespace GLState
