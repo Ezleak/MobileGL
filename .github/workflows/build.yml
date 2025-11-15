@@ -1,22 +1,70 @@
 name: Build MobileGL
 
 on:
-  workflow_dispatch:
   push:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+        BUILD_ROOT: ${{github.workspace}}
 
     steps:
-    - uses: actions/checkout@main
-
-    - name: Configure CMake and Build
-      run: |
-          bash build.bash
-
-    - name: Upload build output
-      uses: actions/upload-artifact@main
+    - uses: actions/checkout@v4
       with:
-        name: MG
-        path: build/*.so
+        submodules: true
+
+    - name: Configure ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-${{ hashFiles('**/CMakeLists.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
+
+    - name: Install ccache
+      run: sudo apt-get install -y ccache
+
+    - name: Setup ccache
+      run: |
+        echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+        echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+        ccache --set-config=sloppiness=file_macro,locale,time_macros
+        ccache --max-size=500M
+        ccache -z
+
+    - name: Pre-build ccache stats
+      run: ccache -s
+    
+    - name: Update glslang external sources
+      working-directory: ${{env.BUILD_ROOT}}/3rdparty/glslang
+      run: python update_glslang_sources.py
+
+    - name: Configure CMake
+      working-directory: ${{env.BUILD_ROOT}}
+      run: |
+        cmake -B build \
+        -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+        -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+        -DANDROID_ABI=arm64-v8a \
+        -DANDROID_PLATFORM=android-29 \
+        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake \
+        -DANDROID_TOOLCHAIN=clang
+
+    - name: Build
+      run: cmake --build build --config Release --parallel $(nproc)
+
+    - name: Post-build ccache stats
+      run: ccache -s
+
+    - name: Strip
+      run: |
+        cd build
+        $ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip libMobileGL.so
+
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: MobileGL
+        path: build/libMobileGL.so
