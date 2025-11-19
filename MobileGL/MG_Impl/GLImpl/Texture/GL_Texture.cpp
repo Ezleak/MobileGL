@@ -1,5 +1,9 @@
 #include "GL_Texture.h"
 #include "GL/gl.h"
+#include "Config.h"
+#if MOBILEGL_BACKEND == MOBILEGL_BACKEND_TYPE_DIRECT_GLES
+#include <MG_Backend/DirectGLES/DirectGLES.h>
+#endif
 #include "MG_Util/Types.h"
 #include "Validators.h"
 #include "ProxyTexture.h"
@@ -152,6 +156,7 @@ namespace MobileGL {
                 break;
             case GL_TEXTURE_MIN_FILTER:
                 textureObject->GetSamplerObject()->SetMinFilter(MG_Util::ConvertGLEnumToSamplerFilterMode(param));
+                textureObject->GetSamplerObject()->SetMipmapMode(MG_Util::ConvertGLEnumToSamplerMipmapMode(param));
                 break;
             case GL_TEXTURE_MIN_LOD: {
                 Float maxLod = textureObject->GetSamplerObject()->GetMaxLod();
@@ -173,7 +178,7 @@ namespace MobileGL {
             case GL_TEXTURE_SWIZZLE_G:
             case GL_TEXTURE_SWIZZLE_B:
             case GL_TEXTURE_SWIZZLE_A: {
-                auto swizzleParam = MG_Util::ConvertGLEnumToTextureSwizzleParam(pname);
+                auto swizzleParam = MG_Util::ConvertGLEnumPnameToTextureSwizzleParam(pname);
                 auto swizzleValue = MG_Util::ConvertGLEnumToTextureSwizzleParam(param);
                 textureObject->SetSwizzleParam(swizzleParam, swizzleValue);
                 break;
@@ -233,6 +238,7 @@ namespace MobileGL {
                 break;
             case GL_TEXTURE_MIN_FILTER:
                 textureObject->GetSamplerObject()->SetMinFilter(MG_Util::ConvertGLEnumToSamplerFilterMode(param));
+                textureObject->GetSamplerObject()->SetMipmapMode(MG_Util::ConvertGLEnumToSamplerMipmapMode(param));
                 break;
             case GL_TEXTURE_MIN_LOD: {
                 Float maxLod = textureObject->GetSamplerObject()->GetMaxLod();
@@ -254,7 +260,7 @@ namespace MobileGL {
             case GL_TEXTURE_SWIZZLE_G:
             case GL_TEXTURE_SWIZZLE_B:
             case GL_TEXTURE_SWIZZLE_A: {
-                auto swizzleParam = MG_Util::ConvertGLEnumToTextureSwizzleParam(pname);
+                auto swizzleParam = MG_Util::ConvertGLEnumPnameToTextureSwizzleParam(pname);
                 auto swizzleValue = MG_Util::ConvertGLEnumToTextureSwizzleParam(param);
                 textureObject->SetSwizzleParam(swizzleParam, swizzleValue);
                 break;
@@ -389,13 +395,15 @@ namespace MobileGL {
                 processedPixels = MG_Util::PixelStoreProcessor::ProcessTexturePixelsDataUnpack(
                     originalPixels, MG_State::pGLContext->GetPixelStoreParameters(true), bytesPerPixel,
                     {width, height, 1}, false, imageSize);
+            } else {
+                MGLOG_D("TexImage2D_State: No input pixel, do allocate only");
             }
 
             MG_State::GLState::MipmapLevelInput mipmap =
                 MG_State::GLState::MipmapLevelInput({width, height, 1}, level, false, 0,
-                                                    {isProxy ? nullptr : malloc(totalBytes), isProxy ? 0 : totalBytes});
+                                                    {(isProxy || originalPixels == nullptr) ? nullptr : malloc(totalBytes), isProxy ? 0 : totalBytes});
 
-            if (!isProxy && !mipmap.inputData.data) {
+            if (!isProxy && originalPixels != nullptr && !mipmap.inputData.data) {
                 MGLOG_E("TexImage2D_State: Failed to allocate memory for mipmap level data, size: %zu", totalBytes);
                 free(processedPixels);
                 processedPixels = nullptr;
@@ -470,13 +478,13 @@ namespace MobileGL {
             case GL_TEXTURE_MAG_FILTER:
                 if (params) {
                     *params =
-                        MG_Util::ConvertSamplerFilterModeToGLEnum(textureObject->GetSamplerObject()->GetMagFilter());
+                        MG_Util::ConvertSamplerFilterModeToGLEnum(textureObject->GetSamplerObject()->GetMagFilter(), SamplerMipmapMode::None);
                 }
                 break;
             case GL_TEXTURE_MIN_FILTER:
                 if (params) {
                     *params =
-                        MG_Util::ConvertSamplerFilterModeToGLEnum(textureObject->GetSamplerObject()->GetMinFilter());
+                        MG_Util::ConvertSamplerFilterModeToGLEnum(textureObject->GetSamplerObject()->GetMinFilter(), textureObject->GetSamplerObject()->GetMipmapMode());
                 }
                 break;
             case GL_TEXTURE_MIN_LOD:
@@ -491,11 +499,6 @@ namespace MobileGL {
                 break;
             case GL_TEXTURE_BASE_LEVEL:
             case GL_TEXTURE_MAX_LEVEL:
-            case GL_TEXTURE_SWIZZLE_R:
-            case GL_TEXTURE_SWIZZLE_G:
-            case GL_TEXTURE_SWIZZLE_B:
-            case GL_TEXTURE_SWIZZLE_A:
-            case GL_TEXTURE_SWIZZLE_RGBA:
             case GL_TEXTURE_BORDER_COLOR:
                 break; // TODO
             case GL_TEXTURE_WRAP_S:
@@ -555,13 +558,13 @@ namespace MobileGL {
             case GL_TEXTURE_MAG_FILTER:
                 if (params) {
                     *params =
-                        MG_Util::ConvertSamplerFilterModeToGLEnum(textureObject->GetSamplerObject()->GetMagFilter());
+                        MG_Util::ConvertSamplerFilterModeToGLEnum(textureObject->GetSamplerObject()->GetMagFilter(), SamplerMipmapMode::None);
                 }
                 break;
             case GL_TEXTURE_MIN_FILTER:
                 if (params) {
                     *params =
-                        MG_Util::ConvertSamplerFilterModeToGLEnum(textureObject->GetSamplerObject()->GetMinFilter());
+                        MG_Util::ConvertSamplerFilterModeToGLEnum(textureObject->GetSamplerObject()->GetMinFilter(), textureObject->GetSamplerObject()->GetMipmapMode());
                 }
                 break;
             case GL_TEXTURE_MIN_LOD:
@@ -804,18 +807,22 @@ namespace MobileGL {
             // TODO: implement
         }
 
-        void CopyTexSubImage2D_State(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y,
-                                     GLsizei width, GLsizei height) {
-            // TODO: implement
+        void CopyTexSubImage2D_Backend(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y,
+                                       GLsizei width, GLsizei height) {
+#if MOBILEGL_BACKEND == MOBILEGL_BACKEND_TYPE_DIRECT_GLES
+            MG_Backend::DirectGLES::CopyTexSubImage2D(target, level, xoffset, yoffset, x, y, width, height);
+#endif
         }
 
         void CopyTexSubImage1D_State(GLenum target, GLint level, GLint xoffset, GLint x, GLint y, GLsizei width) {
             // TODO: implement
         }
 
-        void CopyTexImage2D_State(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
-                                  GLsizei height, GLint border) {
-            // TODO: implement
+        void CopyTexImage2D_Backend(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
+                                    GLsizei height, GLint border) {
+#if MOBILEGL_BACKEND == MOBILEGL_BACKEND_TYPE_DIRECT_GLES
+            MG_Backend::DirectGLES::CopyTexImage2D(target, level, internalformat, x, y, width, height, border);
+#endif
         }
 
         void CopyTexImage1D_State(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
@@ -1004,7 +1011,7 @@ namespace MobileGL {
 
         void CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y,
                                GLsizei width, GLsizei height) {
-            CopyTexSubImage2D_State(target, level, xoffset, yoffset, x, y, width, height);
+            CopyTexSubImage2D_Backend(target, level, xoffset, yoffset, x, y, width, height);
         }
 
         void CopyTexSubImage1D(GLenum target, GLint level, GLint xoffset, GLint x, GLint y, GLsizei width) {
@@ -1013,7 +1020,7 @@ namespace MobileGL {
 
         void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
                             GLsizei height, GLint border) {
-            CopyTexImage2D_State(target, level, internalformat, x, y, width, height, border);
+            CopyTexImage2D_Backend(target, level, internalformat, x, y, width, height, border);
         }
 
         void CopyTexImage1D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
