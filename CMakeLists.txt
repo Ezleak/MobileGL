@@ -11,14 +11,19 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug" OR MOBILEGL_FORCE_RELEASE_OPT)
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
     endif()
 
-    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MATCHES "AppleClang")
         add_compile_options(-O3 -ffunction-sections -fdata-sections)
         add_link_options(-Wl,--gc-sections)
     elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
         add_compile_options(/O2 /GL)
+    else ()
+        add_compile_options(-O3)
     endif()
 endif()
 
+if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    add_compile_options(/Zc:preprocessor)
+endif()
 
 enable_language(CXX)
 
@@ -137,6 +142,10 @@ set(SOURCE_FILES
     MobileGL/MG_State/GLState/VertexArrayState/VertexArrayState.cpp
     MobileGL/MG_State/GLState/VertexArrayState/VertexArrayObject.cpp
     MobileGL/MG_State/GLState/TextureState/TextureObject.cpp
+    MobileGL/MG_State/GLState/TextureState/TextureObject1D.cpp
+    MobileGL/MG_State/GLState/TextureState/TextureObject2D.cpp
+    MobileGL/MG_State/GLState/TextureState/TextureObject2DCube.cpp
+    MobileGL/MG_State/GLState/TextureState/TextureObject3D.cpp
     MobileGL/MG_State/GLState/TextureState/TextureUnit.cpp
     MobileGL/MG_State/GLState/TextureState/TextureState.cpp
     MobileGL/MG_State/GLState/ProgramState/ProgramObject.cpp

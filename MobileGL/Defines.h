@@ -42,3 +42,22 @@
 #else
 #define MOBILEGL_LOG_FILE_PATH ""
 #endif
+
+#if _MSC_VER
+#define TRAP assert(false)
+#elif __clang__
+#define TRAP __builtin_debugtrap()
+#else
+#include <signal.h>
+#define TRAP raise(SIGTRAP)
+#endif
+
+// =============================== Utils ================================ //
+#define MOBILEGL_ASSERT(condition, ...)                                                                                \
+    do {                                                                                                               \
+        if (!(condition)) {                                                                                            \
+            MGLOG_F("Assertion failed" __VA_OPT__(": ") __VA_ARGS__);                                                  \
+            MGLOG_F("  at %s:%d (%s)", __FILE__, __LINE__, __func__);                                                  \
+            TRAP;                                                                                                      \
+        }                                                                                                              \
+    } while (0)
