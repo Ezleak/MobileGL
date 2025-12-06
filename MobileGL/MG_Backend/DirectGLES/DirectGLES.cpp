@@ -346,8 +346,6 @@ namespace MobileGL::MG_Backend::DirectGLES {
         Int maxTextureUnits = MG_State::GLState::TextureState::MAX_TEXTURE_IMAGE_UNITS;
         for (Int unit = 0; unit < maxTextureUnits; ++unit) {
             auto& textureUnit = MG_State::pGLContext->GetTextureUnitObject(unit);
-            if (!textureUnit.GetBindingSlot(TextureTarget::Texture2D).GetBoundObject()) continue;
-            // TODO
 
             MG_External::GLES::glActiveTexture(GL_TEXTURE0 + unit);
 
@@ -355,6 +353,7 @@ namespace MobileGL::MG_Backend::DirectGLES {
                 const auto& textureObject = bindingSlot.GetBoundObject();
                 if (!textureObject) continue;
 
+                // Bind texture object
                 auto target = textureObject->GetTarget();
                 if (target == TextureTarget::TextureBuffer || target == TextureTarget::Texture1D ||
                     target == TextureTarget::TextureRectangle || target == TextureTarget::Texture2DMultisampleArray ||
@@ -369,6 +368,17 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
                 GLenum targetGL = MG_Util::ConvertTextureTargetToGLEnum(target);
                 backendTextureIt->second->Bind(targetGL);
+            }
+
+            // Bind sampler object
+            const auto& samplerObject = textureUnit.GetSamplerObject();
+            if (samplerObject) {
+                const auto& backendSamplerIt = SamplerImpl::g_backendSamplerObjects.find(samplerObject);
+                if (backendSamplerIt != SamplerImpl::g_backendSamplerObjects.end()) {
+                    backendSamplerIt->second->Bind(unit);
+                }
+            } else {
+                MG_External::GLES::glBindSampler(unit, 0);
             }
         }
 

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project("MobileGL")
 
-option(MOBILEGL_FORCE_RELEASE_OPT "Enable Release optimization flags in Debug build" OFF)
+option(MOBILEGL_FORCE_RELEASE_OPT "Enable Release optimization flags in Debug build" ON)
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug" OR MOBILEGL_FORCE_RELEASE_OPT)
     include(CheckIPOSupported)
@@ -38,6 +38,24 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if (MSVC)
     set(CMAKE_CXX_FLAGS "/EHsc ${CMAKE_CXX_FLAGS}")
 endif()
+
+# Generate MGLGitHash.h
+execute_process(
+    COMMAND git rev-parse HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_HASH_FULL
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+string(SUBSTRING "${GIT_COMMIT_HASH_FULL}" 0 7 GIT_COMMIT_HASH_SHORT)
+
+configure_file(
+    ${CMAKE_SOURCE_DIR}/MobileGL/MG_Util/Miscellany/MGLGitHash.h.in
+    ${CMAKE_BINARY_DIR}/generated/MGLGitHash.h
+    @ONLY
+)
+
+include_directories(${CMAKE_BINARY_DIR}/generated)
 
 set(ENABLE_RTTI                ON  CACHE BOOL "Enables RTTI (will be took by glslang)" FORCE)
 
