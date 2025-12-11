@@ -76,6 +76,13 @@
 #include <vulkan/vulkan_android.h>
 #endif
 
+#ifdef TRACY_ENABLE
+#include <tracy/Tracy.hpp>
+#define TRACY_ZONECOLOR_ENTRY 0xFF0000
+#define TRACY_ZONECOLOR_FRONTEND 0x00FF00
+#define TRACY_ZONECOLOR_BACKEND 0x00FF00
+#endif
+
 // Post-includes for significant project headers
 #include "MG_Util/Debug/Log.h"
 #include "MG_Util/Types.h"

@@ -30,24 +30,21 @@ namespace MobileGL::MG_Backend::DirectGLES {
     }
 
     namespace DebugImpl {
-        void ErrorLopper::Loop(std::function<void(GLenum)> func) {
 #if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
+        void ErrorLopper::Loop(std::function<void(GLenum)> func) {
             GLenum err = MG_External::GLES::glGetError();
             while (err != GL_NO_ERROR) {
                 func(err);
                 err = MG_External::GLES::glGetError();
             }
-#endif
         }
 
         void ErrorLopper::Clear() {
-#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
             GLenum err = MG_External::GLES::glGetError();
             while (err != GL_NO_ERROR) {
                 MGLOG_D("Stray GL Error cleared: %s", MG_Util::ConvertGLEnumToString(err).c_str());
                 err = MG_External::GLES::glGetError();
             }
-#endif
         }
 
         ErrorLopper::ErrorLopper() {
@@ -56,6 +53,12 @@ namespace MobileGL::MG_Backend::DirectGLES {
         ErrorLopper::~ErrorLopper() {
             Clear();
         }
+#else
+        void ErrorLopper::Loop(std::function<void(GLenum)> func) {}
+        void ErrorLopper::Clear() {}
+        ErrorLopper::ErrorLopper() {}
+        ErrorLopper::~ErrorLopper() {}
+#endif
     } // namespace DebugImpl
 
     // TODO: deletion for deleted objects
@@ -386,7 +389,7 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
                 // Bind texture object
                 auto target = textureObject->GetTarget();
-                if (target == TextureTarget::TextureBuffer || target == TextureTarget::Texture1D ||
+                if (target == TextureTarget::Texture1D ||
                     target == TextureTarget::TextureRectangle || target == TextureTarget::Texture2DMultisampleArray ||
                     target == TextureTarget::Texture1DArray || target == TextureTarget::Texture3D ||
                     target == TextureTarget::Texture2DMultisample || target == TextureTarget::Texture2DArray) {
@@ -750,7 +753,10 @@ namespace MobileGL::MG_Backend::DirectGLES {
         auto textureObject = bindingSlot.GetBoundObject();
 
         textureObject->SetInternalFormat(mglInternalFormat);
-        textureObject->AllocateStorage(TextureUploadTarget::Texture2D, level, {{width, height, 1}, 0});
+        MOBILEGL_ASSERT(nullptr != dynamic_cast<MG_State::GLState::TextureObjectMipmap*>(textureObject.get()),
+                "Texture object here should always be an object with mipmap");
+        auto textureMipmapObject = static_cast<MG_State::GLState::TextureObjectMipmap*>(textureObject.get());
+        textureMipmapObject->AllocateStorage(TextureUploadTarget::Texture2D, level, {{width, height, 1}, 0});
     }
 
     void CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width,
