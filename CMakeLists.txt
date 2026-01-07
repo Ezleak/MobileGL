@@ -31,6 +31,7 @@ endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     add_compile_options(/Zc:preprocessor)
+    add_compile_options(/Zc:__cplusplus)
 endif()
 
 enable_language(CXX)
@@ -138,6 +139,7 @@ set(SOURCE_FILES
     MobileGL/MG_Util/BackendLoaders/OpenGL/Loader.cpp
 
     MobileGL/MG_Util/Texture/PixelStoreProcessor.cpp
+    MobileGL/MG_Util/Texture/TextureFormatProcessor.cpp
 
     MobileGL/MG_Impl/GLXImpl/Exporting/Definitions.cpp
     MobileGL/MG_Impl/GLXImpl/LookUp/LookUp.cpp

@@ -16,6 +16,7 @@
 #include "ProxyTexture.h"
 #include "MG_State/GLState/TextureState/TextureObjectBuffer.h"
 #include "MG_Util/Converters/GLToStr/GLEnumConverter.h"
+#include "MG_Util/Texture/TextureFormatProcessor.h"
 
 #include <MG_State/GLState/Core.h>
 #include <MG_Util/Metrics/TextureMetrics.h>
@@ -68,7 +69,7 @@ namespace MobileGL {
             if (!TextureImpl::ValidateTextureUploadTarget(textureUploadingTarget)) return;
             if (!TextureImpl::ValidateTextureLevelNumber(level)) return;
             if (!TextureImpl::ValidateTextureSizeWithTextureUploadTarget(textureUploadingTarget, width, height)) return;
-            if (!TextureImpl::ValidateTextureSizeRange(width, height)) return;
+            if (!TextureImpl::ValidateTextureSizeRange(width, height, 1)) return;
             if (!TextureImpl::ValidateTextureLevelWithUploadTarget(textureUploadingTarget, level)) return;
 
             // TODO: GL_INVALID_OPERATION is generated if a non-zero buffer object name is bound to the
@@ -494,24 +495,16 @@ namespace MobileGL {
 
         void TexImage3D_State(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
                               GLsizei depth, GLint border, GLenum format, GLenum type, const void* pixels) {
-            // TODO: implement
-        }
-
-        void TexImage2D_State(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
-                              GLint border, GLenum format, GLenum type, const void* pixels) {
             MGLOG_D(
-                "TexImage2D_State called with target: %s, level: %d, internalformat: %s, width: %d, height: %d, "
-                "border: %d, format: %s, type: %s (%u), pixels: %p",
-                MG_Util::ConvertTextureUploadTargetToString(MG_Util::ConvertGLEnumToTextureUploadTarget(target))
-                    .c_str(),
+                "%s called with target: %s, level: %d, internalformat: %s, width: %d, height: %d, depth: %d, "
+                "border: %d, format: %s, type: %s (%u), pixels: %p", __func__,
+                MG_Util::ConvertTextureUploadTargetToString(MG_Util::ConvertGLEnumToTextureUploadTarget(target)).c_str(),
                 level,
                 MG_Util::ConvertTextureInternalFormatToString(
-                    MG_Util::ConvertGLEnumToTextureInternalFormat(internalformat))
-                    .c_str(),
-                width, height, border,
+                    MG_Util::ConvertGLEnumToTextureInternalFormat(internalformat)).c_str(),
+                width, height, depth, border,
                 MG_Util::ConvertTextureInputFormatToString(MG_Util::ConvertGLEnumToTextureInputFormat(format)).c_str(),
-                MG_Util::ConvertTexturePixelDataTypeToString(MG_Util::ConvertGLEnumToTexturePixelDataType(type))
-                    .c_str(),
+                MG_Util::ConvertTexturePixelDataTypeToString(MG_Util::ConvertGLEnumToTexturePixelDataType(type)).c_str(),
                 type, pixels);
             // ======================= Converting ================================
             TextureUploadTarget textureUploadingTarget = MG_Util::ConvertGLEnumToTextureUploadTarget(target);
@@ -526,7 +519,124 @@ namespace MobileGL {
             if (!TextureImpl::ValidateTextureUploadTarget(textureUploadingTarget)) return;
             if (!TextureImpl::ValidateTextureLevelNumber(level)) return;
             if (!TextureImpl::ValidateTextureSizeWithTextureUploadTarget(textureUploadingTarget, width, height)) return;
-            if (!TextureImpl::ValidateTextureSizeRange(width, height)) return;
+            if (!TextureImpl::ValidateTextureSizeRange(width, height, depth)) return;
+            if (!TextureImpl::ValidateTextureInternalFormat(textureInternalFormat)) return;
+            if (!TextureImpl::ValidateTextureBorderNumber(border)) return;
+            if (!TextureImpl::ValidateTextureInternalFormatCompatibleWithInput(
+                    textureInputFormat, textureInternalFormat, texturePixelDataType))
+                return;
+            if (!TextureImpl::ValidateTextureLevelWithUploadTarget(textureUploadingTarget, level)) return;
+
+            // TODO: GL_INVALID_OPERATION is generated if a non-zero buffer object name is bound to the
+            // GL_PIXEL_UNPACK_BUFFER target and the buffer object's data store is currently mapped.
+            // GL_INVALID_OPERATION is generated if a non-zero buffer object name is bound to the GL_PIXEL_UNPACK_BUFFER
+            // target and the data would be unpacked from the buffer object such that the memory reads required would
+            // exceed the data store size.
+            // GL_INVALID_OPERATION is generated if a non-zero buffer object name is bound to the GL_PIXEL_UNPACK_BUFFER
+            // target and data is not evenly divisible into the number of bytes needed to store in memory a datum
+            // indicated by type.
+            // ======================= Processing ================================
+            SharedPtr<MG_State::GLState::ITextureObject> textureObject = nullptr;
+            Bool isProxy = TextureImpl::IsProxyTextureTarget(textureUploadingTarget);
+            if (isProxy) {
+                textureObject =
+                    TextureImpl::pProxyTextureManager->CreateOrReplaceProxyTextureObject(textureUploadingTarget);
+            } else {
+                auto activeUnit =
+                    MG_State::pGLContext->GetTextureUnitObject(MG_State::pGLContext->GetActiveTextureUnit());
+                auto& bindingSlot = activeUnit.GetBindingSlot(textureTarget);
+                textureObject = bindingSlot.GetBoundObject();
+            }
+
+            // ===================== Error Checking ==============================
+            if (!TextureImpl::ValidateTextureObject(textureObject)) return;
+
+            // ======================= Processing ================================
+
+            SizeT imageSize = 0;
+            const SizeT inputBpp = MG_Util::GetInputBytesPerPixel(textureInputFormat, texturePixelDataType);
+            const SizeT internalBpp = MG_Util::GetInternalBytesPerPixel(textureInternalFormat, texturePixelDataType);
+            const SizeT internalBytes = width * height * depth * internalBpp;
+
+            textureObject->SetInternalFormat(textureInternalFormat);
+
+            // if isProxy, no more pixel transfer needed below
+            if (isProxy) return;
+
+            const void* originalPixels = pixels;
+
+            // PBO
+            const auto& pixelUnpackBufferObject =
+                MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::PixelUnpack).GetBoundObject();
+            if (pixelUnpackBufferObject) {
+                MGLOG_D("%s: Using Pixel Unpack Buffer Object ID: %u", __func__,
+                        pixelUnpackBufferObject->GetExternalIndex());
+                originalPixels = reinterpret_cast<const char*>(pixelUnpackBufferObject->GetDataReadOnly()->data()) +
+                                 reinterpret_cast<SizeT>(pixels);
+            }
+
+
+            MOBILEGL_ASSERT(nullptr != dynamic_cast<MG_State::GLState::TextureObjectMipmap*>(textureObject.get()),
+                            "Texture object here should always be an object with mipmap");
+            auto textureMipmapObject = static_cast<MG_State::GLState::TextureObjectMipmap*>(textureObject.get());
+
+            // Allocate in TextureObject
+            textureMipmapObject->AllocateStorage(textureUploadingTarget, level, {{width, height, depth}, internalBytes});
+
+            if (!originalPixels) {
+                MGLOG_D("%s: No input pixel and no PBO bound, no pixel transfer", __func__);
+                return;
+            }
+
+            void* processedPixels = nullptr;
+            processedPixels = MG_Util::PixelStoreProcessor::ProcessTexturePixelsDataUnpack(
+                originalPixels, MG_State::pGLContext->GetPixelStoreParameters(true), textureInternalFormat,
+                textureInputFormat, texturePixelDataType, {width, height, depth}, false, imageSize);
+
+            if (processedPixels && imageSize > 0) {
+                if (imageSize != internalBytes) {
+                    MGLOG_W("%s: Processed pixel data size (%zu) does not match expected size (%zu). "
+                            "This may indicate an alignment or processing issue.", __func__,
+                            imageSize, internalBytes);
+                }
+
+                const SizeT copySize = std::min(imageSize, internalBytes);
+                DataPtr texelInput{processedPixels, copySize};
+                textureMipmapObject->UpdateMipmapSubData(textureUploadingTarget, level, texelInput);
+            }
+
+            textureMipmapObject->MarkStorageDirty(textureUploadingTarget, level, true);
+
+            free(processedPixels);
+        }
+
+        void TexImage2D_State(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height,
+                              GLint border, GLenum format, GLenum type, const void* pixels) {
+            MGLOG_D(
+                "%s called with target: %s, level: %d, internalformat: %s, width: %d, height: %d, "
+                "border: %d, format: %s, type: %s (%u), pixels: %p", __func__,
+                MG_Util::ConvertTextureUploadTargetToString(MG_Util::ConvertGLEnumToTextureUploadTarget(target)).c_str(),
+                level,
+                MG_Util::ConvertTextureInternalFormatToString(
+                    MG_Util::ConvertGLEnumToTextureInternalFormat(internalformat)).c_str(),
+                width, height, border,
+                MG_Util::ConvertTextureInputFormatToString(MG_Util::ConvertGLEnumToTextureInputFormat(format)).c_str(),
+                MG_Util::ConvertTexturePixelDataTypeToString(MG_Util::ConvertGLEnumToTexturePixelDataType(type)).c_str(),
+                type, pixels);
+            // ======================= Converting ================================
+            TextureUploadTarget textureUploadingTarget = MG_Util::ConvertGLEnumToTextureUploadTarget(target);
+            TextureTarget textureTarget = MG_Util::ConvertGLEnumToTextureTarget(target);
+            TextureInputFormat textureInputFormat = MG_Util::ConvertGLEnumToTextureInputFormat(format);
+            TexturePixelDataType texturePixelDataType = MG_Util::ConvertGLEnumToTexturePixelDataType(type);
+            TextureInternalFormat textureInternalFormat = MG_Util::ConvertGLEnumToTextureInternalFormat(internalformat);
+
+            // ===================== Error Checking ==============================
+            if (!TextureImpl::ValidateTexturePixelDataType(texturePixelDataType)) return;
+            if (!TextureImpl::ValidateTextureInputFormat(textureInputFormat)) return;
+            if (!TextureImpl::ValidateTextureUploadTarget(textureUploadingTarget)) return;
+            if (!TextureImpl::ValidateTextureLevelNumber(level)) return;
+            if (!TextureImpl::ValidateTextureSizeWithTextureUploadTarget(textureUploadingTarget, width, height)) return;
+            if (!TextureImpl::ValidateTextureSizeRange(width, height, 1)) return;
             if (!TextureImpl::ValidateTextureInternalFormat(textureInternalFormat)) return;
             if (!TextureImpl::ValidateTextureBorderNumber(border)) return;
             if (!TextureImpl::ValidateTextureInternalFormatCompatibleWithInput(
@@ -577,7 +687,7 @@ namespace MobileGL {
             const auto& pixelUnpackBufferObject =
                 MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::PixelUnpack).GetBoundObject();
             if (pixelUnpackBufferObject) {
-                MGLOG_D("TexImage2D_State: Using Pixel Unpack Buffer Object ID: %u",
+                MGLOG_D("%s: Using Pixel Unpack Buffer Object ID: %u", __func__,
                         pixelUnpackBufferObject->GetExternalIndex());
                 originalPixels = reinterpret_cast<const char*>(pixelUnpackBufferObject->GetDataReadOnly()->data()) +
                                  reinterpret_cast<SizeT>(pixels);
@@ -591,7 +701,7 @@ namespace MobileGL {
             textureMipmapObject->AllocateStorage(textureUploadingTarget, level, {{width, height, 1}, internalBytes});
 
             if (!originalPixels) {
-                MGLOG_D("TexImage2D_State: No input pixel and no PBO bound, no pixel transfer");
+                MGLOG_D("%s: No input pixel and no PBO bound, no pixel transfer", __func__);
                 return;
             }
 
@@ -1101,6 +1211,16 @@ namespace MobileGL {
             // TODO: implement
         }
 
+        void CopyTexImage2D_State(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
+                                    GLsizei height, GLint border) {
+            GLenum outInternalFormat, format, type;
+            MG_Util::TextureFormatProcessor::NormalizePixelFormat(internalformat, &outInternalFormat, &format, &type);
+            const auto pixelUnpackBufferObject =
+                    MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::PixelUnpack).GetBoundObject();
+            TexImage2D_State(target, level, outInternalFormat, width, height, border, format, type, nullptr);
+            MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::PixelUnpack).Bind(pixelUnpackBufferObject);
+        }
+
         void CopyTexImage2D_Backend(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
                                     GLsizei height, GLint border) {
 #if MOBILEGL_BACKEND == MOBILEGL_BACKEND_TYPE_DIRECT_GLES
@@ -1153,6 +1273,7 @@ namespace MobileGL {
         }
 
         void BindTexture_State(GLenum target, GLuint texture) {
+            // TODO: deal with condition where texture == 0
             MGLOG_D("BindTexture_State called with target: 0x%X, texture: %u", target, texture);
             // ======================= Converting ================================
             TextureTarget textureTarget = MG_Util::ConvertGLEnumToTextureTarget(target);
@@ -1324,6 +1445,7 @@ namespace MobileGL {
 
         void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
                             GLsizei height, GLint border) {
+            CopyTexImage2D_State(target, level, internalformat, x, y, width, height, border);
             CopyTexImage2D_Backend(target, level, internalformat, x, y, width, height, border);
         }
 
