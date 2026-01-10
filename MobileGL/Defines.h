@@ -38,11 +38,12 @@
 #define MOBILEGL_BACKEND_TYPE_DIRECT_GLES 3
 
 // ====================== MobileGL configurations ======================= //
-#define MOBILEGL_LOG_ACTIVE_LEVEL MOBILEGL_LOG_LEVEL_DEBUG
+#define MOBILEGL_LOG_ACTIVE_LEVEL MOBILEGL_LOG_LEVEL_INFO
 
 #define MOBILEGL_LOG_ENABLE_CONSOLE 0
 #define MOBILEGL_LOG_ENABLE_FILE 1
 #define MOBILEGL_LOG_ENABLE_ANDROID 1
+#define MOBILEGL_ENABLE_SCOPE_MARKER 1
 
 // Require C++23
 // Clang/Android NDK still doesn't have support for that :(

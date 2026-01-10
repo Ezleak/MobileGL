@@ -66,6 +66,20 @@ namespace MobileGL::MG_Backend::DirectGLES {
         ErrorLopper::ErrorLopper() {}
         ErrorLopper::~ErrorLopper() {}
 #endif
+
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
+        OpenGLScopeMarker::OpenGLScopeMarker(String scopeName) {
+            MG_External::GLES::glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, scopeName.c_str());
+        }
+
+        OpenGLScopeMarker::~OpenGLScopeMarker() {
+            MG_External::GLES::glPopDebugGroup();
+        }
+#else
+        OpenGLScopeMarker::OpenGLScopeMarker(String scopeName) {}
+
+        OpenGLScopeMarker::~OpenGLScopeMarker() {}
+#endif
     } // namespace DebugImpl
 
     // TODO: deletion for deleted objects
@@ -447,10 +461,7 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
                     // Bind texture object
                     auto target = textureObject->GetTarget();
-                    if (target == TextureTarget::Texture1D || target == TextureTarget::TextureRectangle ||
-                        target == TextureTarget::Texture2DMultisampleArray || target == TextureTarget::Texture1DArray ||
-                        target == TextureTarget::Texture2DMultisample ||
-                        target == TextureTarget::Texture2DArray) {
+                    if (!TextureImpl::IsSupportedTextureTarget(target)) {
                         MGLOG_D("    Texture target %s is not supported, skipping.",
                                 MG_Util::ConvertTextureTargetToString(target).c_str());
                         continue;
@@ -586,6 +597,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
     }
 
     void Clear(GLbitfield mask) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         TextureImpl::SyncNeccessaryTextures();
         FramebufferImpl::SyncCurrentFBO();
         RenderStateImpl::SyncRenderState();
@@ -596,18 +610,27 @@ namespace MobileGL::MG_Backend::DirectGLES {
     }
 
     void DrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
         PrepareForDraw(syncBit);
         MG_External::GLES::glDrawElements(mode, count, type, indices);
     }
 
     void DrawArrays(GLenum mode, GLint first, GLsizei count) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DrawSyncBit syncBit = DrawSyncBit::None;
         PrepareForDraw(syncBit);
         MG_External::GLES::glDrawArrays(mode, first, count);
     }
 
     void DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices, GLint basevertex) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
         PrepareForDraw(syncBit);
         MG_External::GLES::glDrawElementsBaseVertex(mode, count, type, indices, basevertex);
@@ -615,6 +638,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     void MultiDrawElements(GLenum mode, const GLsizei* count, GLenum type, const GLvoid* const* indices,
                            GLsizei drawcount) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
         PrepareForDraw(syncBit);
 
@@ -625,6 +651,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     void MultiDrawElementsBaseVertex(GLenum mode, const GLsizei* count, GLenum type, const GLvoid* const* indices,
                                      GLsizei drawcount, const GLint* basevertex) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
         PrepareForDraw(syncBit);
 
@@ -634,6 +663,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
     }
 
     void MultiDrawElementsIndirect(GLenum mode, GLenum type, const void* indirect, GLsizei drawcount, GLsizei stride) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DrawSyncBit syncBit = DrawSyncBit::IndexBuffer | DrawSyncBit::IndirectBuffer;
         PrepareForDraw(syncBit);
 
@@ -645,6 +677,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
     }
 
     void MultiDrawArraysIndirect(GLenum mode, const void* indirect, GLsizei drawcount, GLsizei stride) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DrawSyncBit syncBit = DrawSyncBit::IndirectBuffer;
         PrepareForDraw(syncBit);
 
@@ -719,6 +754,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     void BlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1,
                          GLint dstY1, GLbitfield mask, GLenum filter) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DebugImpl::ErrorLopper errorLopper;
 
         TextureImpl::SyncNeccessaryTextures();
@@ -747,8 +785,47 @@ namespace MobileGL::MG_Backend::DirectGLES {
         });
     }
 
+    bool UpdateTextureBindingAtTarget(GLenum target) {
+#ifdef TRACY_ENABLE
+        ZoneScopedNC(__func__, TRACY_ZONECOLOR_BACKEND);
+#endif
+        auto unit = MG_State::pGLContext->GetActiveTextureUnit();
+        auto& textureUnit = MG_State::pGLContext->GetTextureUnitObject(unit);
+
+        MG_External::GLES::glActiveTexture(GL_TEXTURE0 + unit);
+        auto textureTarget = MG_Util::ConvertGLEnumToTextureTarget(target);
+        if (!TextureImpl::IsSupportedTextureTarget(textureTarget)) {
+            MOBILEGL_ASSERT(false, "    Texture target %s is not supported, skipping.",
+                            MG_Util::ConvertTextureTargetToString(textureTarget).c_str());
+            return false;
+        }
+
+        const auto& bindingSlot = textureUnit.GetBindingSlot(textureTarget);
+        {
+            const auto& textureObject = bindingSlot.GetBoundObject();
+            if (!textureObject) {
+                MGLOG_W("%s: Texture target %s does not have texture bound.", __func__,
+                        MG_Util::ConvertTextureTargetToString(textureTarget).c_str());
+            }
+
+            const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
+            SharedPtr<TextureImpl::BackendTextureObject> backendTextureObject;
+            if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) {
+                backendTextureObject = MakeShared<TextureImpl::BackendTextureObject>();
+                TextureImpl::g_backendTextureObjects[textureObject] = backendTextureObject;
+            } else {
+                backendTextureObject = backendTextureIt->second;
+            }
+            backendTextureObject->Bind(target);
+        }
+        return true;
+    }
+
     void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
                         GLsizei height, GLint border) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
+    DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DebugImpl::ErrorLopper errorLopper;
         MGLOG_D("%s: Backend", __func__);
         TextureImpl::SyncNeccessaryTextures();
@@ -764,6 +841,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
 
+        if (!UpdateTextureBindingAtTarget(target))
+            return;
+
 //        GLint realInternalFormat;
 //        MG_External::GLES::glGetTexLevelParameteriv(target, level, GL_TEXTURE_INTERNAL_FORMAT, &realInternalFormat);
 //        errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
@@ -775,6 +855,11 @@ namespace MobileGL::MG_Backend::DirectGLES {
         GLenum format = GL_DEPTH_COMPONENT;
         GLenum type = GL_UNSIGNED_INT;
         TextureImpl::GenerateTextureFormatInfo(mglInternalFormat, &internalformat, &format, &type);
+        MOBILEGL_ASSERT(format != GL_NONE && type != GL_NONE, "%s: cannot GenerateTextureFormatInfo(%s): out internalformat=%s, format=%s, type=%s",
+                        MG_Util::ConvertTextureInternalFormatToString(mglInternalFormat).c_str(),
+                        MG_Util::ConvertGLEnumToString(internalformat).c_str(),
+                        MG_Util::ConvertGLEnumToString(format).c_str(),
+                        MG_Util::ConvertGLEnumToString(type).c_str());
         TexturePixelDataType texturePixelDataType = MG_Util::ConvertGLEnumToTexturePixelDataType(type);
 
         bool isDepthFormat =
@@ -791,6 +876,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
             MGLOG_D("%s: Backend depth", __func__);
             MG_External::GLES::glTexImage2D(target, level, (GLint)internalformat, width, height, border, format, type,
                                             nullptr);
+            errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
+                MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
+            });
             FramebufferImpl::BackendFramebufferBindingProtector drawFboProtector(GL_DRAW_FRAMEBUFFER);
             FramebufferImpl::BackendFramebufferBindingProtector readFboProtector(GL_READ_FRAMEBUFFER);
             errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
@@ -830,6 +918,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     void CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width,
                            GLsizei height) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DebugImpl::ErrorLopper errorLopper;
 
         MGLOG_D("%s: Backend", __func__);
@@ -846,21 +937,8 @@ namespace MobileGL::MG_Backend::DirectGLES {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
 
-        Int unit = MG_State::pGLContext->GetActiveTextureUnit();
-        auto& activeUnit = MG_State::pGLContext->GetTextureUnitObject(unit);
-        TextureTarget textureTarget = MG_Util::ConvertGLEnumToTextureTarget(target);
-        auto& bindingSlot = activeUnit.GetBindingSlot(textureTarget);
-        const auto& textureObject = bindingSlot.GetBoundObject();
-
-        const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
-        SharedPtr<TextureImpl::BackendTextureObject> backendTextureObject;
-        if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) {
-            backendTextureObject = MakeShared<TextureImpl::BackendTextureObject>();
-            TextureImpl::g_backendTextureObjects[textureObject] = backendTextureObject;
-        } else {
-            backendTextureObject = backendTextureIt->second;
-        }
-        backendTextureObject->Bind(target);
+        if (!UpdateTextureBindingAtTarget(target))
+            return;
 
         BindCurrentFBO(FramebufferTarget::Read);
         errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
@@ -920,6 +998,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
     }
 
     void GenerateMipmap(GLenum target) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         auto unitIndex = MG_State::pGLContext->GetActiveTextureUnit();
         auto& unit = MG_State::pGLContext->GetTextureUnitObject(unitIndex);
         auto& slot = unit.GetBindingSlot(MG_Util::ConvertGLEnumToTextureTarget(target));
