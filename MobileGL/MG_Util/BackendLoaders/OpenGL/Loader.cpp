@@ -425,6 +425,14 @@ namespace MobileGL {
             EGL_FUNC_DECL(eglWaitClient)
             EGL_FUNC_DECL(eglWaitGL)
             EGL_FUNC_DECL(eglWaitNative)
+            EGL_FUNC_DECL(eglCreateSync)
+            EGL_FUNC_DECL(eglDestroySync)
+            EGL_FUNC_DECL(eglClientWaitSync)
+            EGL_FUNC_DECL(eglGetSyncAttrib)
+            EGL_FUNC_DECL(eglCreateImage)
+            EGL_FUNC_DECL(eglDestroyImage)
+            EGL_FUNC_DECL(eglCreatePlatformPixmapSurface)
+            EGL_FUNC_DECL(eglWaitSync)
         } // namespace EGL
     } // namespace MG_External
 
@@ -448,7 +456,8 @@ namespace MobileGL {
             void *libGLES = nullptr, *libEGL = nullptr;
 
             static const char* LibPathPrefixes[] = {
-                "", "/opt/vc/lib/", "/usr/local/lib/", "/usr/lib/", "/usr/lib/x86_64-linux-gnu/", nullptr};
+                /*"", */ // We should never search in the current directory to avoid breaking LD_LIBRARY_PATH usage
+                "/opt/vc/lib/", "/usr/local/lib/", "/usr/lib/", "/usr/lib/x86_64-linux-gnu/", nullptr};
             static const char* LibExts[] = {"so", "so.1", "so.2", "dylib", "dll", nullptr};
             static const char* GLES3Libs[] = {"libGLESv3_CM", "libGLESv3", "libGLESv2_CM", "libGLESv2", nullptr};
             static const char* EGLLibs[] = {"libEGL", nullptr};
@@ -911,6 +920,7 @@ namespace MobileGL {
                 INIT_EGL_FUNC(eglCreatePbufferFromClientBuffer)
                 INIT_EGL_FUNC(eglCreatePbufferSurface)
                 INIT_EGL_FUNC(eglCreatePixmapSurface)
+                INIT_EGL_FUNC(eglCreatePlatformPixmapSurface)
                 INIT_EGL_FUNC(eglCreatePlatformWindowSurface)
                 INIT_EGL_FUNC(eglCreateWindowSurface)
                 INIT_EGL_FUNC(eglDestroyContext)
@@ -941,6 +951,14 @@ namespace MobileGL {
                 INIT_EGL_FUNC(eglWaitClient)
                 INIT_EGL_FUNC(eglWaitGL)
                 INIT_EGL_FUNC(eglWaitNative)
+                INIT_EGL_FUNC(eglCreateSync)
+                INIT_EGL_FUNC(eglDestroySync)
+                INIT_EGL_FUNC(eglClientWaitSync)
+                INIT_EGL_FUNC(eglGetSyncAttrib)
+                INIT_EGL_FUNC(eglCreateImage)
+                INIT_EGL_FUNC(eglDestroyImage)
+                INIT_EGL_FUNC(eglGetPlatformDisplay)
+                INIT_EGL_FUNC(eglWaitSync)
 
                 EGLint configAttribs[] = {EGL_RED_SIZE,
                                           8,
