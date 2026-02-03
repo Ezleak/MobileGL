@@ -18,6 +18,7 @@
 #include <MG_State/GLState/FramebufferState/FramebufferObject.h>
 #if MOBILEGL_BACKEND == MOBILEGL_BACKEND_TYPE_DIRECT_GLES
 #include <MG_Backend/DirectGLES/DirectGLES.h>
+#include "MG_Util/BackendLoaders/OpenGL/Loader.h"
 #endif
 
 namespace MobileGL {
@@ -159,9 +160,11 @@ namespace MobileGL {
                 *params = 0; // TODO
                 break;
             case GL_ARRAY_BUFFER_BINDING: {
-                *params = MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::Vertex)
-                              .GetBoundObject()
-                              ->GetExternalIndex();
+                auto obj = MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::Vertex).GetBoundObject();
+                if (obj)
+                    *params = obj->GetExternalIndex();
+                else
+                    *params = 0;
                 break;
             }
             case GL_BLEND:
@@ -564,7 +567,7 @@ namespace MobileGL {
                 *params = MG_State::pGLContext->GetPixelStoreParam(PixelStoreParam::PackImageHeight);
                 break;
             case GL_PACK_LSB_FIRST:
-                *params = MG_State::pGLContext->GetPixelStoreParam(PixelStoreParam::PackLsbFirst);
+                *params = MG_State::pGLContext->GetPixelStoreParam(PixelStoreParam::PackLSBFirst);
                 break;
             case GL_PACK_ROW_LENGTH:
                 *params = MG_State::pGLContext->GetPixelStoreParam(PixelStoreParam::PackRowLength);
@@ -817,7 +820,11 @@ namespace MobileGL {
                 *params = 0; // TODO
                 break;
             case GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT:
-                *params = 256; // TODO: get real value from backend
+#if MOBILEGL_BACKEND == MOBILEGL_BACKEND_TYPE_DIRECT_GLES
+                *params = MG_External::GLES::g_glesCaps.uniformBufferOffsetAlignment;
+#else
+                *params = 256;
+#endif
                 break;
             case GL_UNIFORM_BUFFER_SIZE:
                 *params = 0; // TODO
@@ -832,7 +839,7 @@ namespace MobileGL {
                 *params = MG_State::pGLContext->GetPixelStoreParam(PixelStoreParam::UnpackImageHeight);
                 break;
             case GL_UNPACK_LSB_FIRST:
-                *params = MG_State::pGLContext->GetPixelStoreParam(PixelStoreParam::UnpackLsbFirst);
+                *params = MG_State::pGLContext->GetPixelStoreParam(PixelStoreParam::UnpackLSBFirst);
                 break;
             case GL_UNPACK_ROW_LENGTH:
                 *params = MG_State::pGLContext->GetPixelStoreParam(PixelStoreParam::UnpackRowLength);
