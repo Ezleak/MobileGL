@@ -7,7 +7,12 @@
 // End of Source File Header
 
 #include "DirectGLES.h"
+#include "GLES3/gl32.h"
+#include "MG_State/GLState/ErrorState/Error.h"
+#include "MG_State/GLState/RenderState/RenderState.h"
 #include "MG_State/GLState/SamplerState/SamplerObject.h"
+#include "MG_Util/Debug/Log.h"
+#include "MG_Util/Types.h"
 #include "Utils.h"
 #include "Managers.h"
 #include <MG_Util/Converters/GLToMG/TextureEnumConverter.h>
@@ -20,6 +25,7 @@
 #include <MG_Util/Converters/MGToGL/TextureEnumConverter.h>
 #include <MG_Util/Converters/MGToStr/TextureEnumConverter.h>
 #include <MG_Util/Converters/MGToGL/RenderStateEnumConverter.h>
+#include <MG_Util/Texture/PixelStoreProcessor.h>
 
 namespace MobileGL::MG_Backend::DirectGLES {
     enum class DrawSyncBit : Uint32 {
@@ -303,7 +309,6 @@ namespace MobileGL::MG_Backend::DirectGLES {
             MG_External::GLES::glDisable(cap_gl);                                                                      \
         }                                                                                                              \
     }
-            SYNC_CAPABILITY(Blend, GL_BLEND);
             SYNC_CAPABILITY(DepthTest, GL_DEPTH_TEST);
             SYNC_CAPABILITY(ScissorTest, GL_SCISSOR_TEST);
             SYNC_CAPABILITY(CullFace, GL_CULL_FACE);
@@ -312,19 +317,107 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
             const auto& ToGLBoolean = [](Bool b) -> GLboolean { return b ? GL_TRUE : GL_FALSE; };
 
-            if (parameters.SrcFactorRGB != g_syncedRenderStateParameters.SrcFactorRGB ||
-                parameters.DstFactorRGB != g_syncedRenderStateParameters.DstFactorRGB ||
-                parameters.SrcFactorAlpha != g_syncedRenderStateParameters.SrcFactorAlpha ||
-                parameters.DstFactorAlpha != g_syncedRenderStateParameters.DstFactorAlpha) { // Blend func
-                const BlendFactor &srcRGB = parameters.SrcFactorRGB, &dstRGB = parameters.DstFactorRGB,
-                                  &srcAlpha = parameters.SrcFactorAlpha, &dstAlpha = parameters.DstFactorAlpha;
+            { // Blend State
+                using FBO = MG_State::GLState::FramebufferObject;
+                const auto& targetStates = parameters.BlendStates;
+                auto& syncedStates = g_syncedRenderStateParameters.BlendStates;
 
-                MG_External::GLES::glBlendFuncSeparate(
-                    MG_Util::ConvertBlendFactorToGLEnum(srcRGB), MG_Util::ConvertBlendFactorToGLEnum(dstRGB),
-                    MG_Util::ConvertBlendFactorToGLEnum(srcAlpha), MG_Util::ConvertBlendFactorToGLEnum(dstAlpha));
+                Bool allEnabled = true;
+                Bool allDisabled = true;
+                Bool anyCapDirty = false;
+
+                for (Uint i = 0; i < FBO::MAX_DRAW_BUFFERS; ++i) {
+                    Bool enabled = targetStates[i].Enabled;
+                    if (enabled)
+                        allDisabled = false;
+                    else
+                        allEnabled = false;
+
+                    if (enabled != syncedStates[i].Enabled) {
+                        anyCapDirty = true;
+                    }
+                }
+
+                if (anyCapDirty) {
+                    if (allEnabled) {
+                        MG_External::GLES::glEnable(GL_BLEND);
+                        for (auto& s : syncedStates)
+                            s.Enabled = true;
+                    } else if (allDisabled) {
+                        MG_External::GLES::glDisable(GL_BLEND);
+                        for (auto& s : syncedStates)
+                            s.Enabled = false;
+                    } else {
+                        for (Uint i = 0; i < FBO::MAX_DRAW_BUFFERS; ++i) {
+                            if (targetStates[i].Enabled != syncedStates[i].Enabled) {
+                                syncedStates[i].Enabled = targetStates[i].Enabled;
+                                syncedStates[i].Enabled ? MG_External::GLES::glEnablei(GL_BLEND, i)
+                                                        : MG_External::GLES::glDisablei(GL_BLEND, i);
+                            }
+                        }
+                    }
+                }
+
+                Bool allFuncsSame = true;
+                Bool anyFuncDirty = false;
+                const auto& first = targetStates[0];
+
+                for (Uint i = 0; i < FBO::MAX_DRAW_BUFFERS; ++i) {
+                    const auto& cur = targetStates[i];
+                    const auto& syn = syncedStates[i];
+
+                    Bool isDiffFromSyn =
+                        (cur.SrcFactorRGB != syn.SrcFactorRGB || cur.DstFactorRGB != syn.DstFactorRGB ||
+                         cur.SrcFactorAlpha != syn.SrcFactorAlpha || cur.DstFactorAlpha != syn.DstFactorAlpha);
+
+                    if (isDiffFromSyn) anyFuncDirty = true;
+
+                    if (allFuncsSame && i > 0) {
+                        if (cur.SrcFactorRGB != first.SrcFactorRGB || cur.DstFactorRGB != first.DstFactorRGB ||
+                            cur.SrcFactorAlpha != first.SrcFactorAlpha || cur.DstFactorAlpha != first.DstFactorAlpha) {
+                            allFuncsSame = false;
+                        }
+                    }
+                }
+
+                if (anyFuncDirty) {
+                    if (allFuncsSame) {
+                        MG_External::GLES::glBlendFuncSeparate(
+                            MG_Util::ConvertBlendFactorToGLEnum(first.SrcFactorRGB),
+                            MG_Util::ConvertBlendFactorToGLEnum(first.DstFactorRGB),
+                            MG_Util::ConvertBlendFactorToGLEnum(first.SrcFactorAlpha),
+                            MG_Util::ConvertBlendFactorToGLEnum(first.DstFactorAlpha));
+
+                        for (auto& syn : syncedStates) {
+                            syn.SrcFactorRGB = first.SrcFactorRGB;
+                            syn.DstFactorRGB = first.DstFactorRGB;
+                            syn.SrcFactorAlpha = first.SrcFactorAlpha;
+                            syn.DstFactorAlpha = first.DstFactorAlpha;
+                        }
+                    } else {
+                        for (Uint i = 0; i < FBO::MAX_DRAW_BUFFERS; ++i) {
+                            const auto& cur = targetStates[i];
+                            auto& syn = syncedStates[i];
+
+                            if (cur.SrcFactorRGB != syn.SrcFactorRGB || cur.DstFactorRGB != syn.DstFactorRGB ||
+                                cur.SrcFactorAlpha != syn.SrcFactorAlpha || cur.DstFactorAlpha != syn.DstFactorAlpha) {
+                                syn.SrcFactorRGB = cur.SrcFactorRGB;
+                                syn.DstFactorRGB = cur.DstFactorRGB;
+                                syn.SrcFactorAlpha = cur.SrcFactorAlpha;
+                                syn.DstFactorAlpha = cur.DstFactorAlpha;
+
+                                MG_External::GLES::glBlendFuncSeparatei(
+                                    i, MG_Util::ConvertBlendFactorToGLEnum(cur.SrcFactorRGB),
+                                    MG_Util::ConvertBlendFactorToGLEnum(cur.DstFactorRGB),
+                                    MG_Util::ConvertBlendFactorToGLEnum(cur.SrcFactorAlpha),
+                                    MG_Util::ConvertBlendFactorToGLEnum(cur.DstFactorAlpha));
+                            }
+                        }
+                    }
+                }
             }
 
-            { // Blend equation
+            { // Depth state
                 if (parameters.DepthFunc != g_syncedRenderStateParameters.DepthFunc) {
                     MG_External::GLES::glDepthFunc(MG_Util::ConvertDepthTestFuncToGLEnum(parameters.DepthFunc));
                 }
@@ -793,8 +886,8 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
         auto textureTarget = MG_Util::ConvertGLEnumToTextureTarget(target);
         if (!TextureImpl::IsSupportedTextureTarget(textureTarget)) {
-            MOBILEGL_ASSERT(false, "    Texture target %s is not supported, skipping.",
-                            MG_Util::ConvertTextureTargetToString(textureTarget).c_str());
+            MGLOG_E("    Texture target %s is not supported, skipping.",
+                    MG_Util::ConvertTextureTargetToString(textureTarget).c_str());
             return false;
         }
 
@@ -819,6 +912,43 @@ namespace MobileGL::MG_Backend::DirectGLES {
         return true;
     }
 
+    static GLuint s_prevDrawFBO = 0;
+    static GLuint s_prevReadFBO = 0;
+    void BindTempFBO(Bool isRead) {
+        MGLOG_D("%s: Binding temporary FBO for operations like CopyTexImage2D that require framebuffer binding, "
+                "previous draw FBO=%u, read FBO=%u",
+                __func__, s_prevDrawFBO, s_prevReadFBO);
+        static GLuint tempFBO = 0;
+        if (!tempFBO) {
+            MG_External::GLES::glGenFramebuffers(1, &tempFBO);
+        }
+        if (isRead) {
+            MG_External::GLES::glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, (GLint*)&s_prevReadFBO);
+            MG_External::GLES::glBindFramebuffer(GL_READ_FRAMEBUFFER, tempFBO);
+        } else {
+            MG_External::GLES::glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, (GLint*)&s_prevDrawFBO);
+            MG_External::GLES::glBindFramebuffer(GL_DRAW_FRAMEBUFFER, tempFBO);
+        }
+    }
+    void RestoreFBOFromTemp(Bool isRead) {
+        if (isRead) {
+            MGLOG_D("%s: Restoring previous read FBO=%u", __func__, s_prevReadFBO);
+            MG_External::GLES::glBindFramebuffer(GL_READ_FRAMEBUFFER, s_prevReadFBO);
+        } else {
+            MGLOG_D("%s: Restoring previous draw FBO=%u", __func__, s_prevDrawFBO);
+            MG_External::GLES::glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_prevDrawFBO);
+        }
+    }
+
+    class TempFBOBinder {
+    public:
+        TempFBOBinder(Bool isRead) : m_isRead(isRead) { BindTempFBO(isRead); }
+        ~TempFBOBinder() { RestoreFBOFromTemp(m_isRead); }
+
+    private:
+        const Bool m_isRead = false;
+    };
+
     void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
                         GLsizei height, GLint border) {
 #if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
@@ -838,17 +968,29 @@ namespace MobileGL::MG_Backend::DirectGLES {
         errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
-
         if (!UpdateTextureBindingAtTarget(target)) return;
 
-        auto mglInternalFormat = MG_Util::ConvertGLEnumToTextureInternalFormat(internalformat);
+        // Bind necessary FBO and texture
+        BindCurrentFBO(FramebufferTarget::Read);
+        Uint activeTextureUnit = MG_State::pGLContext->GetActiveTextureUnit();
+        const auto& textureObject = MG_State::pGLContext->GetTextureUnitObject(activeTextureUnit)
+                                        .GetBindingSlot(MG_Util::ConvertGLEnumToTextureTarget(target))
+                                        .GetBoundObject();
+        const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
+        if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) {
+            MGLOG_E("CopyTexSubImage2D: No backend texture found for texture %u.",
+                    textureObject ? textureObject->GetExternalIndex() : 0);
+            return;
+        }
+        backendTextureIt->second->Bind(target, activeTextureUnit);
 
+        auto mgInternalFormat = textureObject->GetFormat();
         GLenum format = GL_DEPTH_COMPONENT;
         GLenum type = GL_UNSIGNED_INT;
-        TextureImpl::GenerateTextureFormatInfo(mglInternalFormat, &internalformat, &format, &type);
+        TextureImpl::GenerateTextureFormatInfo(mgInternalFormat, &internalformat, &format, &type);
         MOBILEGL_ASSERT(format != GL_NONE && type != GL_NONE,
                         "%s: cannot GenerateTextureFormatInfo(%s): out internalformat=%s, format=%s, type=%s",
-                        MG_Util::ConvertTextureInternalFormatToString(mglInternalFormat).c_str(),
+                        MG_Util::ConvertTextureInternalFormatToString(mgInternalFormat).c_str(),
                         MG_Util::ConvertGLEnumToString(internalformat).c_str(),
                         MG_Util::ConvertGLEnumToString(format).c_str(), MG_Util::ConvertGLEnumToString(type).c_str());
         TexturePixelDataType texturePixelDataType = MG_Util::ConvertGLEnumToTexturePixelDataType(type);
@@ -871,13 +1013,13 @@ namespace MobileGL::MG_Backend::DirectGLES {
                 MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
             });
 
-            GLint currentTex;
-            MG_External::GLES::glGetIntegerv(Utils::GetBindingQuery(target, false), &currentTex);
+            GLint currentTex = backendTextureIt->second->GetBackendTextureId();
             errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
                 MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
             });
 
             GLenum attachment = isStencilFormat ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT;
+            TempFBOBinder tempFBOBinder(false);
             MG_External::GLES::glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, attachment, target, currentTex, level);
 
             if (MG_External::GLES::glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
@@ -917,7 +1059,20 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
         if (!UpdateTextureBindingAtTarget(target)) return;
 
+        // Bind necessary FBO and texture
         BindCurrentFBO(FramebufferTarget::Read);
+        Uint activeTextureUnit = MG_State::pGLContext->GetActiveTextureUnit();
+        const auto& textureObject = MG_State::pGLContext->GetTextureUnitObject(activeTextureUnit)
+                                        .GetBindingSlot(MG_Util::ConvertGLEnumToTextureTarget(target))
+                                        .GetBoundObject();
+        const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
+        if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) {
+            MGLOG_E("CopyTexSubImage2D: No backend texture found for texture %u.",
+                    textureObject ? textureObject->GetExternalIndex() : 0);
+            return;
+        }
+        backendTextureIt->second->Bind(target, activeTextureUnit);
+
         errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
@@ -926,10 +1081,10 @@ namespace MobileGL::MG_Backend::DirectGLES {
         errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
-        auto mglInternalFormat = MG_Util::ConvertGLEnumToTextureInternalFormat(internalFormat);
+        auto mgInternalFormat = MG_Util::ConvertGLEnumToTextureInternalFormat(internalFormat);
 
-        Bool isDepthFormat = MG_Util::IsDepthFormatInternalFormat(mglInternalFormat);
-        Bool isStencilFormat = MG_Util::IsStencilFormatInternalFormat(mglInternalFormat);
+        Bool isDepthFormat = MG_Util::IsDepthFormatInternalFormat(mgInternalFormat);
+        Bool isStencilFormat = MG_Util::IsStencilFormatInternalFormat(mgInternalFormat);
 
         if (!isDepthFormat) {
             MG_External::GLES::glCopyTexSubImage2D(target, level, xoffset, yoffset, x, y, width, height);
@@ -938,12 +1093,12 @@ namespace MobileGL::MG_Backend::DirectGLES {
             });
         } else {
             MGLOG_D("%s: Backend depth", __func__);
-            GLint currentTex;
-            MG_External::GLES::glGetIntegerv(Utils::GetBindingQuery(target, false), &currentTex);
+            GLint currentTex = backendTextureIt->second->GetBackendTextureId();
             errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
                 MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
             });
             GLenum attachment = isStencilFormat ? GL_DEPTH_STENCIL_ATTACHMENT : GL_DEPTH_ATTACHMENT;
+            TempFBOBinder tempFBOBinder(false);
             MG_External::GLES::glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, attachment, target, currentTex, level);
             errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
                 MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
@@ -999,6 +1154,7 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
         MG_External::GLES::glClearBufferfv(buffer, drawbuffer, value);
     }
+
     void ClearBufferiv(GLenum buffer, GLint drawbuffer, const GLint* value) {
         TextureImpl::SyncNeccessaryTextures();
         FramebufferImpl::SyncCurrentFBO();
@@ -1015,6 +1171,324 @@ namespace MobileGL::MG_Backend::DirectGLES {
         BindCurrentFBO(FramebufferTarget::Draw);
 
         MG_External::GLES::glClearBufferuiv(buffer, drawbuffer, value);
+    }
+
+    class TempPixelStoreParameterSync {
+    public:
+        TempPixelStoreParameterSync(Bool isUnpack) : m_isUnpack(isUnpack) {
+            const auto& currentParams = MG_State::pGLContext->GetPixelStoreParameters(isUnpack);
+            m_prevParams = QueryCurrentGLPixelStoreParams(isUnpack);
+            Sync(isUnpack, currentParams);
+        }
+
+        ~TempPixelStoreParameterSync() { Sync(m_isUnpack, m_prevParams); }
+
+    private:
+        const Bool m_isUnpack;
+
+        PixelStoreParameters m_prevParams;
+
+        PixelStoreParameters QueryCurrentGLPixelStoreParams(Bool isUnpack) {
+            PixelStoreParameters p;
+            if (!isUnpack) {
+                MG_External::GLES::glGetIntegerv(GL_PACK_ALIGNMENT, (GLint*)&p.Alignment);
+                MG_External::GLES::glGetIntegerv(GL_PACK_ROW_LENGTH, (GLint*)&p.RowLength);
+                MG_External::GLES::glGetIntegerv(GL_PACK_SKIP_ROWS, (GLint*)&p.SkipRows);
+                MG_External::GLES::glGetIntegerv(GL_PACK_SKIP_PIXELS, (GLint*)&p.SkipPixels);
+                // MG_External::GLES::glGetIntegerv(GL_PACK_IMAGE_HEIGHT, (GLint*)&p.ImageHeight);
+                // MG_External::GLES::glGetIntegerv(GL_PACK_SKIP_IMAGES, (GLint*)&p.SkipImages);
+                // GLint tmp;
+                // MG_External::GLES::glGetIntegerv(GL_PACK_SWAP_BYTES, &tmp);
+                // p.SwapBytes = tmp ? true : false;
+                // MG_External::GLES::glGetIntegerv(GL_PACK_LSB_FIRST, &tmp);
+                // p.LSBFirst = tmp ? true : false;
+            } else {
+                MG_External::GLES::glGetIntegerv(GL_UNPACK_ALIGNMENT, (GLint*)&p.Alignment);
+                MG_External::GLES::glGetIntegerv(GL_UNPACK_ROW_LENGTH, (GLint*)&p.RowLength);
+                MG_External::GLES::glGetIntegerv(GL_UNPACK_SKIP_ROWS, (GLint*)&p.SkipRows);
+                MG_External::GLES::glGetIntegerv(GL_UNPACK_SKIP_PIXELS, (GLint*)&p.SkipPixels);
+                MG_External::GLES::glGetIntegerv(GL_UNPACK_IMAGE_HEIGHT, (GLint*)&p.ImageHeight);
+                MG_External::GLES::glGetIntegerv(GL_UNPACK_SKIP_IMAGES, (GLint*)&p.SkipImages);
+                // GLint tmp;
+                // MG_External::GLES::glGetIntegerv(GL_UNPACK_SWAP_BYTES, &tmp);
+                // p.SwapBytes = tmp ? true : false;
+                // MG_External::GLES::glGetIntegerv(GL_UNPACK_LSB_FIRST, &tmp);
+                // p.LSBFirst = tmp ? true : false;
+            }
+            return p;
+        }
+
+        void Sync(Bool isUnpack, const PixelStoreParameters& params) {
+            if (!isUnpack) {
+                MG_External::GLES::glPixelStorei(GL_PACK_ALIGNMENT, params.Alignment);
+                MG_External::GLES::glPixelStorei(GL_PACK_ROW_LENGTH, params.RowLength);
+                MG_External::GLES::glPixelStorei(GL_PACK_SKIP_ROWS, params.SkipRows);
+                MG_External::GLES::glPixelStorei(GL_PACK_SKIP_PIXELS, params.SkipPixels);
+                // MG_External::GLES::glPixelStorei(GL_PACK_IMAGE_HEIGHT, params.ImageHeight);
+                // MG_External::GLES::glPixelStorei(GL_PACK_SKIP_IMAGES, params.SkipImages);
+                // MG_External::GLES::glPixelStorei(GL_PACK_SWAP_BYTES, params.SwapBytes ? GL_TRUE : GL_FALSE);
+                // MG_External::GLES::glPixelStorei(GL_PACK_LSB_FIRST, params.LSBFirst ? GL_TRUE : GL_FALSE);
+            } else {
+                MG_External::GLES::glPixelStorei(GL_UNPACK_ALIGNMENT, params.Alignment);
+                MG_External::GLES::glPixelStorei(GL_UNPACK_ROW_LENGTH, params.RowLength);
+                MG_External::GLES::glPixelStorei(GL_UNPACK_SKIP_ROWS, params.SkipRows);
+                MG_External::GLES::glPixelStorei(GL_UNPACK_SKIP_PIXELS, params.SkipPixels);
+                MG_External::GLES::glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, params.ImageHeight);
+                MG_External::GLES::glPixelStorei(GL_UNPACK_SKIP_IMAGES, params.SkipImages);
+                // MG_External::GLES::glPixelStorei(GL_UNPACK_SWAP_BYTES, params.SwapBytes ? GL_TRUE : GL_FALSE);
+                // MG_External::GLES::glPixelStorei(GL_UNPACK_LSB_FIRST, params.LSBFirst ? GL_TRUE : GL_FALSE);
+            }
+        }
+    };
+
+    void ReadPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, void* pixels) {
+        MGLOG_D("ReadPixels: x=%d y=%d w=%d h=%d format=%s type=%s pixels=%p", x, y, width, height,
+                MG_Util::ConvertGLEnumToString(format).c_str(), MG_Util::ConvertGLEnumToString(type).c_str(), pixels);
+
+        MOBILEGL_ASSERT(format == GL_RGBA || format == GL_RGBA_INTEGER,
+                        "Only GL_RGBA and GL_RGBA_INTEGER are supported currently, while requested %s.",
+                        MG_Util::ConvertGLEnumToString(format).c_str());
+        MOBILEGL_ASSERT(type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_INT || type == GL_UNSIGNED_INT_2_10_10_10_REV ||
+                            type == GL_INT || type == GL_FLOAT,
+                        "Only GL_UNSIGNED_BYTE, GL_UNSIGNED_INT, GL_UNSIGNED_INT_2_10_10_10_REV, "
+                        "GL_INT and GL_FLOAT are supported currently, while requested %s.",
+                        MG_Util::ConvertGLEnumToString(type).c_str());
+
+        MGLOG_D("ReadPixels: SyncNeccessaryTextures()");
+        TextureImpl::SyncNeccessaryTextures();
+
+        MGLOG_D("ReadPixels: SyncCurrentFBO()");
+        FramebufferImpl::SyncCurrentFBO();
+
+        MGLOG_D("ReadPixels: BindCurrentFBO(Read)");
+        BindCurrentFBO(FramebufferTarget::Read);
+
+        MGLOG_D("ReadPixels: Applying TempPixelStoreParameterSync (PACK)");
+        TempPixelStoreParameterSync tempPackParamsSync(false);
+
+        GLenum fbStatus = MG_External::GLES::glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+        MGLOG_D("ReadPixels: GL_READ_FRAMEBUFFER status = %s", MG_Util::ConvertGLEnumToString(fbStatus).c_str());
+
+        if (fbStatus != GL_FRAMEBUFFER_COMPLETE) {
+            MGLOG_E("ReadPixels: bound READ FBO is not complete");
+            return;
+        }
+
+        // Handle PBO
+        auto pixelPackBufferObject =
+            MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::PixelPack).GetBoundObject();
+        Bool usePBO;
+        GLuint prevPixelPackBuffer = 0;
+        if (pixelPackBufferObject) {
+            BufferImpl::CreateAndSyncBufferObject(pixelPackBufferObject);
+            MGLOG_D("ReadPixels: Using PBO %u", pixelPackBufferObject->GetExternalIndex());
+            usePBO = true;
+            const auto& backendBufferIt = BufferImpl::g_backendBufferObjects.find(pixelPackBufferObject);
+
+            if (backendBufferIt == BufferImpl::g_backendBufferObjects.end()) {
+                MGLOG_E("ReadPixels: No backend buffer found for PBO %u.",
+                        pixelPackBufferObject ? pixelPackBufferObject->GetExternalIndex() : 0);
+                return;
+            }
+            const auto& backendBufferObject = backendBufferIt->second;
+            backendBufferObject->Bind(GL_PIXEL_PACK_BUFFER);
+            MG_External::GLES::glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, (GLint*)&prevPixelPackBuffer);
+        } else {
+            usePBO = false;
+            MGLOG_D("ReadPixels: Not using PBO");
+        }
+
+        MGLOG_D("ReadPixels: glReadPixels()");
+        MG_External::GLES::glReadPixels(x, y, width, height, format, type, pixels);
+        if (usePBO) {
+            // pull back to client memory if PBO is used
+            MGLOG_D("ReadPixels: PBO used, mapping buffer to client memory");
+            GLvoid* pboMappedPtr = MG_External::GLES::glMapBufferRange(
+                GL_PIXEL_PACK_BUFFER, 0, pixelPackBufferObject->GetSize(), GL_MAP_READ_BIT);
+            if (pboMappedPtr) {
+                MGLOG_D("ReadPixels: Copying data from PBO to client memory");
+                SizeT size = pixelPackBufferObject->GetSize();
+                pixelPackBufferObject->UploadSubData({pboMappedPtr, size}, 0);
+                pixelPackBufferObject->ClearDirty();
+                MGLOG_D("ReadPixels: Unmapping PBO");
+                MG_External::GLES::glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+            } else {
+                MGLOG_E("ReadPixels: glMapBufferRange returned nullptr");
+                MGLOG_E("ReadPixels: glMapBufferRange returned nullptr");
+            }
+            MGLOG_D("ReadPixels: Restoring previous pixel pack buffer binding %u", prevPixelPackBuffer);
+            MG_External::GLES::glBindBuffer(GL_PIXEL_PACK_BUFFER, prevPixelPackBuffer);
+        }
+        MGLOG_D("ReadPixels: finished");
+    }
+
+    void GetTexImage(GLenum target, GLint level, GLenum format, GLenum type, void* pixels) {
+        DebugImpl::ErrorLopper errorLopper;
+        MGLOG_D("GetTexImage: target=%s level=%d format=%s type=%s pixels=%p",
+                MG_Util::ConvertGLEnumToString(target).c_str(), level, MG_Util::ConvertGLEnumToString(format).c_str(),
+                MG_Util::ConvertGLEnumToString(type).c_str(), pixels);
+
+        MOBILEGL_ASSERT(format == GL_RGBA || format == GL_RGBA_INTEGER || format == GL_BGRA,
+                        "Only GL_RGBA, GL_RGBA_INTEGER and GL_BGRA are supported currently, while requested %s.",
+                        MG_Util::ConvertGLEnumToString(format).c_str());
+        MOBILEGL_ASSERT(type == GL_UNSIGNED_BYTE || type == GL_UNSIGNED_INT || type == GL_UNSIGNED_INT_2_10_10_10_REV ||
+                            type == GL_INT || type == GL_FLOAT ||
+                            type == GL_UNSIGNED_INT_8_8_8_8 || type == GL_UNSIGNED_INT_8_8_8_8_REV,
+                        "Only GL_UNSIGNED_BYTE, GL_UNSIGNED_INT, GL_UNSIGNED_INT_2_10_10_10_REV, "
+                        "GL_INT, GL_FLOAT, GL_UNSIGNED_INT_8_8_8_8 and GL_UNSIGNED_INT_8_8_8_8_REV "
+                        "are supported currently, while requested %s.",
+                        MG_Util::ConvertGLEnumToString(type).c_str());
+
+        GLenum esFormat = format, esType = type;
+        if (esFormat == GL_BGRA)
+            esFormat = GL_RGBA;
+        if (esType == GL_UNSIGNED_INT_8_8_8_8 || esType == GL_UNSIGNED_INT_8_8_8_8_REV)
+            esType = GL_UNSIGNED_BYTE;
+
+        MGLOG_D("GetTexImage: SyncNeccessaryTextures()");
+        TextureImpl::SyncNeccessaryTextures();
+
+        MGLOG_D("GetTexImage: SyncCurrentFBO()");
+        FramebufferImpl::SyncCurrentFBO();
+
+        Uint activeTextureUnit = MG_State::pGLContext->GetActiveTextureUnit();
+        MGLOG_D("GetTexImage: active texture unit = %u", activeTextureUnit);
+
+        const auto& textureObject = MG_State::pGLContext->GetTextureUnitObject(activeTextureUnit)
+                                        .GetBindingSlot(MG_Util::ConvertGLEnumToTextureTarget(target))
+                                        .GetBoundObject();
+
+        MGLOG_D("GetTexImage: bound texture object = %p (name=%u)", textureObject.get(),
+                textureObject ? textureObject->GetExternalIndex() : 0);
+
+        const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
+
+        if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) {
+            MGLOG_E("GetTexImage: No backend texture found for texture %u.",
+                    textureObject ? textureObject->GetExternalIndex() : 0);
+            return;
+        }
+
+        GLuint backendTexId = backendTextureIt->second->GetBackendTextureId();
+        MGLOG_D("GetTexImage: backend texture id = %u", backendTexId);
+
+        MGLOG_D("GetTexImage: Binding temporary FBO");
+        TempFBOBinder tempFBOBinder(true);
+
+        MGLOG_D("GetTexImage: glFramebufferTexture2D(level=%d)", level);
+        MG_External::GLES::glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, target, backendTexId,
+                                                  level);
+        MGLOG_D("GetTexImage: glReadBuffer(GL_COLOR_ATTACHMENT0)");
+        MG_External::GLES::glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+        GLenum fbStatus = MG_External::GLES::glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+        MGLOG_D("GetTexImage: GL_READ_FRAMEBUFFER status = %s", MG_Util::ConvertGLEnumToString(fbStatus).c_str());
+
+        if (fbStatus != GL_FRAMEBUFFER_COMPLETE) {
+            MGLOG_E("GetTexImage: READ FBO incomplete");
+            MGLOG_E("GetTexImage: bound READ FBO is not complete");
+            return;
+        }
+
+        errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
+            MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
+        });
+
+        MGLOG_D("GetTexImage: Applying TempPixelStoreParameterSync (PACK)");
+        TempPixelStoreParameterSync tempPackParamsSync(false);
+
+        errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
+            MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
+        });
+
+        const auto& storageType = textureObject->GetStorageType();
+        MGLOG_D("GetTexImage: texture storage type = %d", (int)storageType);
+
+        if (storageType == TextureStorageType::Buffer) {
+            MGLOG_E("GetTexImage: Texture storage type Buffer is not supported.");
+            return;
+        }
+
+        auto* textureMipmapObject = static_cast<MG_State::GLState::TextureObjectMipmap*>(textureObject.get());
+
+        auto levelRange = textureMipmapObject->GetLevelRange();
+        MGLOG_D("GetTexImage: mipmap level range = [%d, %d)", levelRange.x(), levelRange.y());
+
+        if (level < levelRange.x() || level >= levelRange.y()) {
+            MGLOG_E("GetTexImage: Requested level %d out of range", level);
+            MOBILEGL_ASSERT(false,
+                            "GetTexImage: Requested level %d is out of range "
+                            "(base level %d, max level %d).",
+                            level, levelRange.x(), levelRange.y());
+            return;
+        }
+
+        auto size = textureMipmapObject->GetMipmapTexelSize(MG_Util::ConvertGLEnumToTextureUploadTarget(target), level);
+
+        MGLOG_D("GetTexImage: mip level %d size = %dx%d", level, size.x(), size.y());
+
+        // Handle PBO
+        auto pixelPackBufferObject =
+            MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::PixelPack).GetBoundObject();
+        Bool usePBO;
+        GLuint prevPixelPackBuffer = 0;
+        if (pixelPackBufferObject) {
+            BufferImpl::CreateAndSyncBufferObject(pixelPackBufferObject);
+            MGLOG_D("GetTexImage: Using PBO %u", pixelPackBufferObject->GetExternalIndex());
+            usePBO = true;
+            const auto& backendBufferIt = BufferImpl::g_backendBufferObjects.find(pixelPackBufferObject);
+            if (backendBufferIt == BufferImpl::g_backendBufferObjects.end()) {
+                MGLOG_E("GetTexImage: No backend buffer found for PBO %u.",
+                        pixelPackBufferObject ? pixelPackBufferObject->GetExternalIndex() : 0);
+                return;
+            }
+            const auto& backendBufferObject = backendBufferIt->second;
+            backendBufferObject->Bind(GL_PIXEL_PACK_BUFFER);
+            MG_External::GLES::glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, (GLint*)&prevPixelPackBuffer);
+        } else {
+            usePBO = false;
+            MGLOG_D("GetTexImage: Not using PBO");
+        }
+
+        errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
+            MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
+        });
+        MGLOG_D("GetTexImage: glReadPixels(0, 0, %d, %d, %s, %s, %p)", size.x(), size.y(),
+                MG_Util::ConvertGLEnumToString(esFormat).c_str(), MG_Util::ConvertGLEnumToString(esType).c_str(), pixels);
+        MG_External::GLES::glReadPixels(0, 0, size.x(), size.y(), esFormat, esType, pixels);
+
+        errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
+            MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
+        });
+        if (usePBO) {
+            // pull back to client memory if PBO is used
+            MGLOG_D("ReadPixels: PBO used, mapping buffer to client memory");
+            GLvoid* pboMappedPtr = MG_External::GLES::glMapBufferRange(
+                GL_PIXEL_PACK_BUFFER, 0, pixelPackBufferObject->GetSize(), GL_MAP_READ_BIT);
+            if (pboMappedPtr) {
+                MGLOG_D("ReadPixels: Copying data from PBO to client memory");
+                SizeT size = pixelPackBufferObject->GetSize();
+                pixelPackBufferObject->UploadSubData({pboMappedPtr, size}, 0);
+                pixelPackBufferObject->ClearDirty();
+                MGLOG_D("ReadPixels: Unmapping PBO");
+                MG_External::GLES::glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+            } else {
+                MGLOG_E("ReadPixels: glMapBufferRange returned nullptr");
+            }
+            MGLOG_D("ReadPixels: Restoring previous pixel pack buffer binding %u", prevPixelPackBuffer);
+
+            MG_External::GLES::glBindBuffer(GL_PIXEL_PACK_BUFFER, prevPixelPackBuffer);
+        } else {
+            if (esFormat == GL_RGBA && format == GL_BGRA && esType == GL_UNSIGNED_BYTE && type == GL_UNSIGNED_INT_8_8_8_8_REV) {
+                MGLOG_D("ReadPixels: ProcessColorSwizzle BGRA (not implemented)");
+
+            }
+        }
+
+        errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
+            MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
+        });
+        MGLOG_D("GetTexImage: finished");
     }
 
 } // namespace MobileGL::MG_Backend::DirectGLES
